@@ -9,7 +9,7 @@
 <script type="module">
 import { helpPageHtml } from "/ui/kpa1500.es.js";
 document.open();
-document.write(helpPageHtml("{{VERSION}}"));
+document.write(helpPageHtml("{{VERSION}}").replace("<h1>", '<p><a href="/">&larr; Open the KPA1500 panel in the browser</a></p><h1>'));
 document.close();
 </script>
 <noscript>This help page needs JavaScript. The same help is in the KPA1500 guide PDF.</noscript>

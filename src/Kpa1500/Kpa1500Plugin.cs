@@ -27,7 +27,7 @@ public sealed record OnRequest(bool On);
 public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
 {
     /// <summary>Keep identical to plugin.json "version".</summary>
-    public const string ManifestVersion = "1.4.3";
+    public const string ManifestVersion = "1.4.4";
     private const string SettingsKey = "config";
 
     private IPluginContext? _ctx;
@@ -374,18 +374,20 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
 
         // Open the help page in this computer's default web browser (the Zeus window cannot open one itself).
         // Only the add-on's own loopback address is ever opened, and only for a request from this computer.
-        endpoints.MapPost("open-help", (HttpContext ctx) =>
+        IResult OpenPage(HttpContext ctx, string suffix)
         {
             var from = ctx.Connection.RemoteIpAddress;
             if (from is not null && !System.Net.IPAddress.IsLoopback(from))
                 return Results.Json(new { ok = false, message = "Only the computer running Zeus can open it." }, statusCode: 403);
             if (_web is not { Running: true } w)
                 return Results.Json(new { ok = false, message = "Turn on the Browser page in Settings (and Save) first." }, statusCode: 409);
-            var url = w.Url + "help";
+            var url = w.Url + suffix;
             return OpenInBrowser(url)
                 ? Results.Ok(new { ok = true, message = "Opened " + url, url })
                 : Results.Json(new { ok = false, message = "Could not start your browser. Open " + url + " yourself.", url }, statusCode: 500);
-        });
+        }
+        endpoints.MapPost("open-help", (HttpContext ctx) => OpenPage(ctx, "help"));
+        endpoints.MapPost("open-panel", (HttpContext ctx) => OpenPage(ctx, ""));
 
         // List the FlexRadios on the network (the operator can pick one in Settings).
         endpoints.MapPost("flex/discover", async (CancellationToken ct) =>

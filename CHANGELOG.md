@@ -3,6 +3,9 @@
 Versions of the KPA1500 feature (`com.kw4ex.zeus.kpa1500`). Newest first.
 No warranty; use at your own risk (see the README).
 
+## 1.4.4
+- Buttons to open the browser page: **Open the panel in my web browser** and **Open the help in my web browser**, in Settings (under Browser page) and in the Help. The help page links back to the panel. (The Help's old "Open as a web page" button is replaced.)
+
 ## 1.4.3
 - Help: "Open in my web browser" now opens your default browser straight to the help page (served by the add-on's browser page), instead of failing inside Zeus. It needs the Browser page turned on (the default).
 

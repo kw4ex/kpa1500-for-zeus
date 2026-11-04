@@ -266,6 +266,15 @@ function makePanel(callBackend) {
     const [busy, setBusy] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
+    const [webNote, setWebNote] = useState(null);
+    const openWeb = async (page) => {
+      setWebNote(null);
+      if (props.webPage) { window.open(page === "help" ? "/help" : "/", "_blank"); return; }
+      try {
+        const r = await call(callBackend, "POST", page === "help" ? "/open-help" : "/open-panel");
+        setWebNote(r && r.ok ? "Opened in your web browser." : ((r && r.message) || "Could not open your web browser."));
+      } catch (e) { setWebNote((e && e.message) || "Could not open your web browser."); }
+    };
     const [saveErr, setSaveErr] = useState(null);
     const [ports, setPorts] = useState([]);
     const [log, setLog] = useState([]);
@@ -658,7 +667,7 @@ function makePanel(callBackend) {
             h("button", { type: "button", className: c("b"), onClick: () => setConfirm(null) }, "Cancel"))));
     } else if (showSettings && draft) {
       overlay = h("div", { className: c("overlay"), style: { alignItems: "flex-start", overflow: "auto" } },
-        Settings({ draft, setDraft, ports, saveErr, connected, busy, found, mac: amp.mac, callBackend, tciStatus: tci, flexStatus: status.flex, webStatus: status.web,
+        Settings({ draft, setDraft, ports, saveErr, connected, busy, found, mac: amp.mac, callBackend, tciStatus: tci, flexStatus: status.flex, webStatus: status.web, webNote, onOpenWeb: openWeb,
           onFind: async () => {
             setFound({ searching: true });
             try { setFound(await call(callBackend, "POST", "/discover")); }
@@ -706,7 +715,7 @@ function makePanel(callBackend) {
 
 // ── Built-in help (plain language, for operators who are not programmers) ───
 // Blocks: p, ul, ol, tip, warn, dl.  The same data draws the in-panel Help and
-// the stand-alone web page ("Open in my web browser").
+// the stand-alone web page ("Open as a web page").
 const HELP = [
   { title: "Start here", open: true, blocks: [
     ["p", "This panel lets Zeus watch and control your Elecraft KPA1500 amplifier and its built-in tuner (ATU). It shows the amp's meters, gives you buttons for the things you do most, and makes the amp follow your radio's frequency by itself."],
@@ -780,7 +789,7 @@ const HELP = [
     ["p", "After changing anything in Settings, scroll down and click Save."]]},
 
   { title: "Using it in a web browser", blocks: [
-    ["p", "The same panel is also available as a web page, handy when Zeus is full screen or you want a bigger view. While Zeus is running, open a web browser on the same computer and go to http://127.0.0.1:8081/ . The full help page is at http://127.0.0.1:8081/help ."],
+    ["p", "The same panel is also available as a web page, handy when Zeus is full screen or you want a bigger view. While Zeus is running, open a web browser on the same computer and go to http://127.0.0.1:8081/ . The full help page is at http://127.0.0.1:8081/help . Easier: in the panel press ? and click Open the panel in my web browser, or open ⚙ Settings and use the buttons under Browser page. The help page has a link back to the panel at the top."],
     ["ul", [
       "Everything works the same as in Zeus: watch the meters, press the buttons, change Settings.",
       "Only this computer can open it, unless you allow other devices (below).",
@@ -900,12 +909,21 @@ function HelpView(p) {
       setNote("Saved as KPA1500-for-Zeus-help.html (look in your Downloads folder). Double-click it to read it in your browser.");
     } catch (e) { setNote("Saving a file is not possible from here. The same help is in this panel."); }
   };
+  const openPanel = async () => {
+    setNote(null);
+    if (p.webPage) { window.open("/", "_blank"); return; }
+    try {
+      const r = await call(p.callBackend, "POST", "/open-panel");
+      setNote(r && r.ok ? "Opened the panel in your web browser." : ((r && r.message) || "Could not open your web browser."));
+    } catch (e) { setNote((e && e.message) || "Could not open your web browser."); }
+  };
   return h("div", { className: c("overlay"), style: { alignItems: "flex-start", overflow: "auto" } },
     h("div", { className: c("card"), role: "dialog", "aria-modal": "true", "aria-label": "KPA1500 help", style: { maxWidth: "620px", width: "100%" } },
       h("div", { className: c("row spread") }, h("h3", null, "KPA1500 help"),
         h("button", { type: "button", className: c("b"), onClick: p.onClose, autoFocus: true }, "Close")),
       h("div", { className: c("row") },
-        h("button", { type: "button", className: c("b"), onClick: openPage }, "Open as a web page"),
+        h("button", { type: "button", className: c("b"), onClick: openPage }, "Open this help in my web browser"),
+        h("button", { type: "button", className: c("b"), onClick: openPanel }, "Open the panel in my web browser"),
         h("button", { type: "button", className: c("b"), onClick: savePage }, "Save as a file")),
       note ? h("div", { className: c("muted"), role: "status" }, note) : null,
       HELP.map((s, i) => h("details", { key: i, className: c("hsec"), open: !!s.open },
@@ -1150,6 +1168,10 @@ function Settings(p) {
             (p.webStatus.lan ? " On the network" + (p.webStatus.passwordRequired ? " (with the password)" : " (no password)") + ", use one of: " + (p.webStatus.lanUrls || []).join("  ") : " Only this computer can reach it.")
         : p.webStatus.error ? "Could not start: " + p.webStatus.error + " Try another port number."
         : "Starting… Click Save if you just changed it."),
+    draft.webEnabled && p.webStatus && p.webStatus.running ? h("div", { key: "webopen", className: c("btns") },
+      h("button", { type: "button", className: c("b"), onClick: () => p.onOpenWeb("panel") }, "Open the panel in my web browser"),
+      h("button", { type: "button", className: c("b"), onClick: () => p.onOpenWeb("help") }, "Open the help in my web browser")) : null,
+    p.webNote ? h("div", { key: "webnote", className: c("muted"), role: "status" }, p.webNote) : null,
 
     h("div", { className: c("glab") }, "Standby on Tune"),
     h("div", { className: c("checks") },
