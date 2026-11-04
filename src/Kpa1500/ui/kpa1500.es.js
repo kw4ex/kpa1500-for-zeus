@@ -63,7 +63,8 @@ const CSS = `
 .${ROOT} button.${ROOT}__b{font-family:var(--font-sans);font-size:11px;font-weight:600;min-height:28px;
   padding:4px 11px;border-radius:var(--r-sm);border:1px solid var(--line-strong);background:var(--bg-3);
   color:var(--fg-0);cursor:pointer;transition:background var(--dur-fast) var(--ease-out)}
-.${ROOT} button.${ROOT}__b:hover:not(:disabled){background:var(--bg-2)}
+.${ROOT} button.${ROOT}__b:hover:not(:disabled):not([aria-pressed=true]){background:var(--bg-2)}
+.${ROOT} button.${ROOT}__b[aria-pressed=true]:hover:not(:disabled){filter:brightness(1.12)}
 .${ROOT} button.${ROOT}__b:focus-visible,.${ROOT} .${ROOT}__in:focus-visible,.${ROOT} input[type=checkbox]:focus-visible,
 .${ROOT} input[type=radio]:focus-visible{outline:2px solid var(--accent-bright);outline-offset:2px}
 .${ROOT} button.${ROOT}__b:disabled{opacity:.75;border-style:dashed;cursor:not-allowed}
