@@ -124,6 +124,8 @@ public sealed class AmpController : IAsyncDisposable
     private int _bandPending = -1;
     private int _lastBandSent = -1;
     private long _lastFreqSentKhz = -1;
+    /// <summary>The last frequency (kHz) this panel sent to the amp (-1 = none yet).</summary>
+    public long LastFreqSentKhz => Interlocked.Read(ref _lastFreqSentKhz);
     private bool _settlePending;
     private bool _prevTuneSignal;
     private readonly TuneGuard _tune = new();

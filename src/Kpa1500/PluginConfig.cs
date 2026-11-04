@@ -77,6 +77,18 @@ public sealed class PluginConfig
 
     /// <summary>Order of the controls at the top of the panel, comma separated.</summary>
     public string ControlOrder { get; set; } = DefaultControlOrder;
+
+    // ── small (two-line) view: which items it shows ──
+    public static readonly string[] MiniItemIds = { "power", "status", "tunestby", "freq", "band", "fwd", "swr" };
+    public const string DefaultMiniItems = "power,status,freq,fwd,swr";
+    public string MiniItems { get; set; } = DefaultMiniItems;
+
+    public static string NormalizeMiniItems(string? items)
+    {
+        var want = new HashSet<string>((items ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), StringComparer.OrdinalIgnoreCase);
+        var keep = MiniItemIds.Where(want.Contains).ToArray();
+        return keep.Length == 0 ? DefaultMiniItems : string.Join(",", keep);
+    }
     public static readonly string[] ControlIds = { "power", "operate", "tunestby", "antenna", "atu", "atutune", "band", "fan" };
     public const string DefaultControlOrder = "power,operate,tunestby,antenna,atu,atutune,band,fan";
 
@@ -174,6 +186,7 @@ public sealed class PluginConfig
         c.SwrWarn = double.IsNaN(c.SwrWarn) ? d.SwrWarn : Math.Clamp(c.SwrWarn, 1.1, 10);
         c.TempWarnC = Math.Clamp(c.TempWarnC, 30, 100);
         c.ControlOrder = NormalizeControlOrder(c.ControlOrder);
+        c.MiniItems = NormalizeMiniItems(c.MiniItems);
         // Zeus only says a transmission is TUNE (not talk) over TCI, so
         // Standby-on-Tune always needs it.
         if (c.StandbyOnTune) c.TciEnabled = true;

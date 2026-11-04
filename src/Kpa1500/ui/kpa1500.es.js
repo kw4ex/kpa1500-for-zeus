@@ -93,6 +93,18 @@ const CSS = `
 .${ROOT} .${ROOT}__k-tx{color:var(--tx)}
 .${ROOT} .${ROOT}__k-ok{color:var(--ok)}
 .${ROOT} .${ROOT}__k-cmd{color:var(--accent-bright)}
+.${ROOT}.${ROOT}__mini{gap:4px;padding:5px 6px}
+.${ROOT} .${ROOT}__mini1{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.${ROOT} .${ROOT}__mini2{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;font-family:var(--font-mono);font-size:13px;color:var(--fg-0)}
+.${ROOT} .${ROOT}__mini2 .${ROOT}__mk{font-size:10px;margin-right:3px}
+.${ROOT} .${ROOT}__hsec{border-top:1px solid var(--line-strong);padding:4px 0}
+.${ROOT} .${ROOT}__hsec summary{cursor:pointer;font-weight:700;color:var(--fg-0);padding:3px 0}
+.${ROOT} .${ROOT}__hp,.${ROOT} .${ROOT}__hl{margin:4px 0;color:var(--fg-1);line-height:1.45;font-size:12px}
+.${ROOT} .${ROOT}__hl{padding-left:18px}.${ROOT} .${ROOT}__hl li{margin:2px 0}
+.${ROOT} .${ROOT}__hdl{margin:4px 0;font-size:12px;color:var(--fg-1)}
+.${ROOT} .${ROOT}__hdl dt{font-weight:700;color:var(--fg-0);margin-top:5px}.${ROOT} .${ROOT}__hdl dd{margin:0 0 0 10px}
+.${ROOT} .${ROOT}__hnote{border:1px solid var(--line-strong);border-left:4px solid var(--accent);border-radius:var(--r-sm);background:var(--bg-2);padding:5px 8px;margin:5px 0;font-size:12px;color:var(--fg-1)}
+.${ROOT} .${ROOT}__hwarn{border-left-color:var(--amber)}
 .${ROOT} .${ROOT}__overlay{position:absolute;inset:0;background:var(--bg-inset);display:flex;align-items:center;
   justify-content:center;padding:12px;border-radius:var(--r-md);z-index:3}
 .${ROOT} .${ROOT}__card{background:var(--bg-1);border:1px solid var(--line-strong);border-radius:var(--r-md);
@@ -180,6 +192,23 @@ function Check(cfg, setCfg, key, label) {
     label);
 }
 
+// Settings: what the small (two-line) view shows.
+const MINI_ITEMS = [["power", "POWER button"], ["status", "OPERATE / STANDBY button"], ["tunestby", "TUNE STBY button"],
+  ["freq", "Amp frequency"], ["band", "Band"], ["fwd", "Output power"], ["swr", "SWR"]];
+function MiniItemsEditor(draft, setDraft) {
+  const cur = new Set(String(draft.miniItems || "power,status,freq,fwd,swr").split(","));
+  const flip = (id) => {
+    const next = new Set(cur); if (next.has(id)) next.delete(id); else next.add(id);
+    setDraft({ ...draft, miniItems: MINI_ITEMS.map((x) => x[0]).filter((k) => next.has(k)).join(",") });
+  };
+  return h("div", { key: "mini", className: c("group") },
+    h("div", { className: c("glab") }, "Small view (two lines): what it shows"),
+    h("div", { className: c("checks") }, MINI_ITEMS.map(([id, label]) =>
+      h("label", { className: c("chk"), key: id },
+        h("input", { type: "checkbox", checked: cur.has(id), onChange: () => flip(id) }), label))),
+    h("div", { className: c("muted") }, "Switch a panel between the small and full view with the ⇕ button at its top right. Each panel remembers its own choice."));
+}
+
 // Settings list: one row per control with a show checkbox and ▲ / ▼ to move it.
 function ControlOrderEditor(draft, setDraft) {
   const order = controlOrder(draft.controlOrder);
@@ -207,8 +236,27 @@ function Field(label, id, control) {
     h("label", { htmlFor: id }, label), control);
 }
 
+// Identify this panel instance so its view choice is remembered separately for each
+// workspace. Uses what Zeus hands the panel; falls back to where it sits on the page.
+function panelKey(props, el) {
+  try {
+    const p = props || {};
+    for (const k of ["instanceId", "panelInstanceId", "panelId", "id", "slot", "layoutId", "key"]) {
+      if (p[k] != null && String(p[k]) !== "") return "p:" + String(p[k]);
+    }
+    let n = el, parts = [];
+    for (let i = 0; n && i < 12; i++, n = n.parentElement) {
+      const d = n.dataset || {};
+      const v = d.panelId || d.instanceId || d.panel || d.slot || d.layoutId || d.id || n.getAttribute("data-rgl-id") || n.getAttribute("data-grid-id") || (n !== el ? n.id : "");
+      if (v) { parts.push(v); if (parts.length >= 2) break; }
+    }
+    if (parts.length) return "d:" + parts.join("/");
+  } catch (e) { /* fall through */ }
+  return "default";
+}
+
 function makePanel(callBackend) {
-  return function Kpa1500Panel() {
+  return function Kpa1500Panel(props) {
     const [status, setStatus] = useState(null);
     const [cfg, setCfgSaved] = useState(null);
     const [draft, setDraft] = useState(null);
@@ -216,6 +264,7 @@ function makePanel(callBackend) {
     const [actErr, setActErr] = useState(null);
     const [busy, setBusy] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
+    const [showHelp, setShowHelp] = useState(false);
     const [saveErr, setSaveErr] = useState(null);
     const [ports, setPorts] = useState([]);
     const [log, setLog] = useState([]);
@@ -223,6 +272,20 @@ function makePanel(callBackend) {
     const [peak, setPeak] = useState({ w: null, at: 0 });
     const [found, setFound] = useState(null);      // null | { searching } | { error } | { searched, found }
     const alive = useRef(true);
+    // Full or small (two-line) view. Remembered per panel: Zeus may place this panel
+    // in several workspaces, each can be set to a different view.
+    const rootRef = useRef(null);
+    const [view, setViewState] = useState("full");
+    const [viewKey, setViewKey] = useState(null);
+    useEffect(() => {
+      const key = panelKey(props, rootRef.current);
+      setViewKey(key);
+      try { const v = window.localStorage.getItem(ROOT + ":view:" + key); if (v === "mini" || v === "full") setViewState(v); } catch (e) { /* no storage */ }
+    }, []);
+    const setView = (v) => {
+      setViewState(v);
+      try { window.localStorage.setItem(ROOT + ":view:" + (viewKey || "default"), v); } catch (e) { /* not remembered */ }
+    };
 
     // Status poll.
     useEffect(() => {
@@ -297,7 +360,7 @@ function makePanel(callBackend) {
 
     // ── loading / unavailable ──────────────────────────────────────────────
     if (!status || !cfg) {
-      return h("div", { className: ROOT, role: "region", "aria-label": "KPA1500" },
+      return h("div", { ref: rootRef, className: ROOT, role: "region", "aria-label": "KPA1500" },
         h("div", { className: c("title") }, "Elecraft KPA1500"),
         loadErr
           ? h("div", { className: c("banner warn"), role: "alert" }, h("strong", null, "Feature backend unavailable. "), loadErr)
@@ -331,7 +394,7 @@ function makePanel(callBackend) {
     const inline = on && amp.atuInline === true;
     // Each control: [shown?, inline buttons | block element]
     const CONTROLS = {
-      power: () => cfg.ctlPower && [toggle("pw", amp.powerOnInProgress ? "WAKING…" : "POWER", on || amp.powerOnInProgress, {
+      power: (f) => (f || cfg.ctlPower) && [toggle("pw", amp.powerOnInProgress ? "WAKING…" : "POWER", on || amp.powerOnInProgress, {
         variant: "litok",
         disabled: !connected || busy || amp.powerOnInProgress || (on && (tx || tuning)),
         title: on ? (tx ? "Not while transmitting" : "Amplifier is ON — click to turn it off") : "Amplifier is off — click to turn it on",
@@ -340,14 +403,14 @@ function makePanel(callBackend) {
           if ((want === "off" && cfg.confirmPowerOff) || (want === "on" && cfg.confirmPowerOn)) setConfirm(want);
           else act("/power", { on: want === "on" });
         } })],
-      operate: () => cfg.ctlOperate && [toggle("op", "OPERATE", operating, {
+      operate: (f) => (f || cfg.ctlOperate) && [toggle("op", f ? (operating ? "OPERATE" : "STANDBY") : "OPERATE", operating, {
         // Going to STANDBY is always allowed (even under RF); going to OPERATE is locked under RF.
         disabled: operating ? (!on || busy) : relayLock,
         title: !on ? "Amplifier is off" : operating ? "In OPERATE — click for STANDBY" : (lockTip || "In STANDBY — click for OPERATE"),
         onClick: () => act("/operate", { operate: !operating }) })],
       // On/off switch, like the Thetis bridge: lit = whenever TUNE is pressed in
       // Zeus the amp goes to STANDBY, and back to OPERATE when TUNE ends.
-      tunestby: () => cfg.ctlTuneGuard && [toggle("tg", sotOn && !(tci.enabled && tci.connected) ? "TUNE STBY ⚠" : "TUNE STBY", sotOn, {
+      tunestby: (f) => (f || cfg.ctlTuneGuard) && [toggle("tg", sotOn && !(tci.enabled && tci.connected) ? "TUNE STBY ⚠" : "TUNE STBY", sotOn, {
         disabled: busy,   // lit blue like OPERATE when on
         title: (sotOn
           ? "Standby on Tune is ON: pressing TUNE in Zeus puts the amp in STANDBY, and OPERATE returns afterwards. Click to turn it off."
@@ -440,6 +503,8 @@ function makePanel(callBackend) {
           (amp.band ? " · " + amp.band : "") +
           (on && amp.antenna ? " · ANT" + amp.antenna : ""))),
       h("div", { className: c("row") }, pills,
+        h("button", { className: c("b icon"), type: "button", "aria-label": "Show the small view", title: "Show the small two-line view", onClick: () => setView("mini") }, "⇕"),
+        h("button", { className: c("b icon"), type: "button", "aria-label": "Help", title: "Help: how to use this panel", onClick: () => setShowHelp(true) }, "?"),
         h("button", { className: c("b icon"), type: "button", "aria-label": "Settings", title: "Settings", onClick: openSettings }, "⚙")));
 
     const banners = [];
@@ -531,7 +596,9 @@ function makePanel(callBackend) {
     if (cfg.showAmpFreq) {
       const vfoKhz = status.radio && status.radio.frequencyHz ? Math.round(status.radio.frequencyHz / 1000) : null;
       const off = amp.freqKhz != null && vfoKhz != null && Math.abs(amp.freqKhz - vfoKhz) > 10 && cfg.sendFrequency;
-      tiles.push(Tile(off ? "Amp freq ≠ VFO" : "Amp freq", mhz(amp.freqKhz), off));
+      const ampShown = amp.freqKhz != null ? mhz(amp.freqKhz)
+        : amp.sentKhz != null ? (amp.sentKhz / 1000).toFixed(3) + " MHz (sent)" : "—";
+      tiles.push(Tile(off ? "Amp freq ≠ VFO" : "Amp freq", ampShown, off));
     }
     if (cfg.showRxLevel) {
       const na = status.noAnt || {};
@@ -593,14 +660,221 @@ function makePanel(callBackend) {
             try { setFound(await call(callBackend, "POST", "/discover")); }
             catch (e) { setFound({ error: e.message || String(e) }); }
           },
-          onCancel: () => setShowSettings(false), onSave: saveSettings,
+          onHelp: () => setShowHelp(true), onCancel: () => setShowSettings(false), onSave: saveSettings,
           onConnect: () => act("/connect"), onDisconnect: () => act("/disconnect"),
           onRefreshPorts: async () => { try { setPorts((await call(callBackend, "GET", "/ports")) || []); } catch (e) { setPorts([]); } } }));
     }
 
-    return h("div", { className: ROOT + (cfg.compact ? " " + c("compact") : ""), role: "region", "aria-label": "Elecraft KPA1500" },
+    if (showHelp) overlay = h(HelpView, { version: status.version, onClose: () => setShowHelp(false) });
+
+    if (view === "mini") {
+      const items = new Set(String(cfg.miniItems || "power,status,freq,fwd,swr").split(","));
+      const btns = [];
+      if (items.has("power")) btns.push(...(CONTROLS.power(true) || []));
+      if (items.has("status")) btns.push(...(CONTROLS.operate(true) || []));
+      if (items.has("tunestby")) btns.push(...(CONTROLS.tunestby(true) || []));
+      const vals = [];
+      const val = (k, label, text, warn) => vals.push(h("span", { key: k, className: warn ? c("pill warn") : undefined },
+        h("span", { className: c("mk") }, label), text));
+      if (items.has("freq")) {
+        const f = amp.freqKhz != null ? mhz(amp.freqKhz) : amp.sentKhz != null ? (amp.sentKhz / 1000).toFixed(3) + " MHz" : "—";
+        const vfoKhz = status.radio && status.radio.frequencyHz ? Math.round(status.radio.frequencyHz / 1000) : null;
+        const off = amp.freqKhz != null && vfoKhz != null && Math.abs(amp.freqKhz - vfoKhz) > 10 && cfg.sendFrequency;
+        val("fr", "Freq", f, off);
+      }
+      if (items.has("band")) val("bd", "Band", amp.band || "—");
+      if (items.has("fwd")) val("fw", "Fwd", amp.forwardW == null ? "—" : amp.forwardW + " W");
+      if (items.has("swr")) val("sw", "SWR", amp.swr == null ? "—" : num(amp.swr, 1) + ":1", swrLevel === "warn" || swrLevel === "tx");
+      return h("div", { ref: rootRef, className: ROOT + " " + c("mini"), role: "region", "aria-label": "Elecraft KPA1500 (small view)" },
+        h("div", { className: c("mini1") }, btns, pills,
+          h("span", { className: c("grow") }),
+          h("button", { className: c("b icon"), type: "button", "aria-label": "Show the full panel", title: "Show the full panel", onClick: () => setView("full") }, "⇕"),
+          h("button", { className: c("b icon"), type: "button", "aria-label": "Help", title: "Help", onClick: () => setShowHelp(true) }, "?"),
+          h("button", { className: c("b icon"), type: "button", "aria-label": "Settings", title: "Settings", onClick: openSettings }, "⚙")),
+        h("div", { className: c("mini2") }, vals),
+        banners, overlay);
+    }
+
+    return h("div", { ref: rootRef, className: ROOT + (cfg.compact ? " " + c("compact") : ""), role: "region", "aria-label": "Elecraft KPA1500" },
       header, controls, banners, telemetry, logView, overlay);
   };
+}
+
+// ── Built-in help (plain language, for operators who are not programmers) ───
+// Blocks: p, ul, ol, tip, warn, dl.  The same data draws the in-panel Help and
+// the stand-alone web page ("Open as a web page").
+const HELP = [
+  { title: "Start here", open: true, blocks: [
+    ["p", "This panel lets Zeus watch and control your Elecraft KPA1500 amplifier and its built-in tuner (ATU). It shows the amp's meters, gives you buttons for the things you do most, and makes the amp follow your radio's frequency by itself."],
+    ["p", "To get going:"],
+    ["ol", [
+      "Turn the KPA1500 on and make sure it is on the same home network as this computer.",
+      "Click the ⚙ gear at the top right of the panel. Under Connection, click Find amplifier, then Use next to your amp. Scroll down and click Save.",
+      "Within a few seconds the POWER button lights green and the meters come alive.",
+      "Change the frequency or band in Zeus. The amp follows within a second or two."]],
+    ["tip", "A lit (coloured) button means \"on / in use now\". A plain button means off. A faint button is the other half of a pair. A dashed outline means the button is locked for the moment (the amp is transmitting, the tuner is searching, or the amp is off)."]]},
+
+  { title: "Connecting to the amplifier", blocks: [
+    ["p", "Network (recommended): in ⚙ Settings leave Network (UDP) selected, click Find amplifier, then Use. If you know the amp's address (it is on the amp's NET menu) you can type it instead. Leave the UDP port at 1500. Other programs on your network, such as Elecraft's own utility, can still talk to the amp at the same time."],
+    ["p", "USB cable or a virtual serial port: choose Serial port, click Refresh, pick the port (COM3 on Windows, /dev/cu.usbserial-… on a Mac, /dev/ttyUSB0 on Linux) and set Baud to match the amp's SERIAL SPEED HOST menu. Only one program at a time can use a serial port."],
+    ["p", "Switching the amp on from the panel: the panel learns the amp's network ID by itself the first time it sees the amp on. After that, POWER can wake the amp from off. The amp's menu item NET WAKE on LAN must be ON; if it is off, the panel shows an Enable Wake-on-LAN button. Click it once."],
+    ["warn", "Only one program should control the amplifier at a time. If you also run the KPA1500 Thetis bridge, close it while you use this panel. Two programs steering one amp fight each other."]]},
+
+  { title: "What the buttons do", blocks: [
+    ["dl", [
+      ["POWER", "Green when the amp is on. Click to turn it off or on."],
+      ["OPERATE", "Blue when the amp is in OPERATE. Plain means STANDBY. STANDBY always works, even while transmitting."],
+      ["TUNE STBY", "Blue when Standby on Tune is on (see below)."],
+      ["ANT 1 / ANT 2", "The lit one is in use."],
+      ["ATU", "Lit when the tuner is in line. Plain means bypassed."],
+      ["ATU TUNE", "Amber while the tuner searches. Click it, press Start, then send a low-power carrier (TUNE) from the radio. Click again to cancel."],
+      ["Band buttons", "The amp's current band. You normally do not need them, because the amp follows the radio."]]],
+    ["p", "The top line shows the version, the amp's address, firmware, band and antenna, plus small tags: TCI (green when connected to Zeus), TX (red while transmitting) and FAULT. Coloured bars under the buttons are messages, such as a fault (with a Clear fault button)."],
+    ["p", "Drive shows the amp's own input reading in OPERATE. During TUNE, when the amp is bypassed, it shows the power passing through, from the radio over TCI (marked \"(radio)\") or from the amp's own meter (marked \"(bypass)\")."]]},
+
+  { title: "The amp follows your radio", blocks: [
+    ["p", "When you change frequency or band in Zeus, the panel sends the new frequency to the amp, and the amp's tuner recalls the setting it saved for that spot. With split on, the amp follows the transmit VFO (this needs TCI, below)."],
+    ["ul", [
+      "The small grey line under the band buttons shows what Zeus reported, for example \"Zeus: 40m · 7074.0 kHz · amp follows the VFO\".",
+      "The Amp freq tile turns amber (\"Amp freq ≠ VFO\") when the amp is more than 10 kHz away from your radio.",
+      "Following is on by default. You can switch it off in Settings (Amp follows the VFO).",
+      "Nothing is sent while you transmit. It is sent just after you stop."]],
+    ["tip", "If the grey line says \"(TCI says …, ignored)\", Zeus's TCI connection reported a different frequency from the one Zeus shows. The panel uses the one Zeus shows."]]},
+
+  { title: "Standby on Tune (the TUNE STBY button)", blocks: [
+    ["p", "When it is on (the button is blue), pressing TUNE in Zeus puts the amp in STANDBY first, so the tuner carrier never goes through the amp. When TUNE ends, OPERATE comes back by itself. There are no pop-ups. The button remembers its setting."],
+    ["p", "It needs Zeus TCI. To set that up:"],
+    ["ol", [
+      "In Zeus's own settings (not this panel's), turn TCI on. Zeus's TCI port is normally 40001.",
+      "In this panel's ⚙ Settings, under Standby on Tune, tick Use Zeus TCI. Leave the host 127.0.0.1, set the port to 40001 (or your Zeus's number) and leave the receiver at 0. Click Save.",
+      "A green TCI tag appears on the top line. If it says TCI WAIT, the line in Settings tells you why. Usually TCI is still off in Zeus, or the port number is different."]],
+    ["p", "A ⚠ on the TUNE STBY button means Zeus TCI is not connected, so the button cannot do its job yet."]]},
+
+  { title: "\"No antenna?\" warning (optional)", blocks: [
+    ["p", "If the receive level on a band drops below a limit, it usually means no antenna is connected, and the panel shows a warning. It can also hold the amp in STANDBY. It needs TCI (see above)."],
+    ["ul", [
+      "In Settings, under No antenna? check, tick Warn when the receive level says no antenna and choose Warn only or Warn and keep the amp in STANDBY.",
+      "The easiest choice is to leave Auto-learn ticked. The panel learns each band's normal noise while you listen.",
+      "Or use Learn this band (antenna connected) or (antenna disconnected), or type a limit in dBm for a band. A number you type is never changed automatically. Leave a box empty to switch the check off for that band.",
+      "Scan all bands now tunes the receiver across the bands to set every limit, then puts your frequency back.",
+      "When you use a dummy load on purpose, click DUMMY OK on the warning."]],
+    ["p", "A switched-in attenuator, the preamp being off, a very narrow filter or a dead band at night can all lower the level and cause a false warning."]]},
+
+  { title: "Choosing what the panel shows", blocks: [
+    ["ul", [
+      "Telemetry shown: untick any meter or reading you do not want.",
+      "Controls at the top: tick or untick a button to show or hide it. Press ▲ or ▼ to move it. Default order puts them back.",
+      "Display: Compact layout makes the panel smaller. You can also choose °C or °F and the warning points for temperature and SWR.",
+      "Behaviour: choose whether to ask before power off or on, and whether the amp follows the VFO."]],
+    ["p", "After changing anything in Settings, scroll down and click Save."]]},
+
+  { title: "A safe first test", blocks: [
+    ["p", "Use a dummy load or a well-matched antenna and keep the radio at low power (about 10 W) for the transmit steps."],
+    ["ol", [
+      "With nothing transmitting, check that band, antenna, ATU, temperature and volts match the amp's front panel.",
+      "Change frequency, then band, in Zeus. The amp follows. Amp freq matches your VFO.",
+      "With TCI on, the RX level shows a dBm number that changes with band noise.",
+      "With the amp in OPERATE and TUNE STBY on, press TUNE in Zeus at about 10 W. The amp goes to STANDBY, Drive shows about 10 W, and when TUNE stops OPERATE returns.",
+      "While transmitting, the ANT, ATU and band buttons are locked (dashed outline).",
+      "Try ATU TUNE with low power. The tuner searches and finishes.",
+      "POWER off turns the amp off. POWER on wakes it within about 15 seconds."]],
+    ["tip", "If anything misbehaves, click OPERATE to put the amp in STANDBY, then note which step failed and what you saw."]]},
+
+  { title: "If something goes wrong", blocks: [
+    ["dl", [
+      ["OFFLINE or NO REPLY", "Is the amp on? Use Find amplifier in Settings. On a Mac, allow Local Network for Zeus (System Settings › Privacy & Security › Local Network). On Windows, allow Zeus through the firewall (Private networks)."],
+      ["Find amplifier finds nothing", "The computer and the amp must be on the same home network. Some Wi-Fi routers block searches. Type the amp's address instead (from its NET menu)."],
+      ["The amp does not follow Zeus", "Look at the grey line under the band buttons and check that Amp follows the VFO is ticked in Settings. Close any other program that controls the amp, such as the Thetis bridge or a logger that sets frequency. Turn the Event log on in Settings and look for \"Frequency … sent to amp\"."],
+      ["Yellow bar: another program is also controlling the amp", "Something else keeps changing the amp's frequency, usually the Thetis bridge. Close it."],
+      ["TCI WAIT, or RX level says \"TCI off\"", "Turn TCI on in Zeus and check the port number (40001)."],
+      ["TUNE STBY shows ⚠, or TUNE does not put the amp in STANDBY", "Zeus TCI is not connected. See Standby on Tune above."],
+      ["Drive is blank during TUNE", "It needs TCI connected (the green TCI tag)."],
+      ["POWER on does not wake the amp", "Turn on NET WAKE on LAN in the amp, or turn the amp on once from its front panel so the panel learns its network ID."],
+      ["\"No antenna?\" when the antenna is fine", "Check the attenuator and preamp. Lower that band's limit, or click Learn this band (antenna connected)."],
+      ["Serial list is empty or port busy", "Check the USB cable and click Refresh. Another program may have the port open; close it or use the network connection."]]],
+    ["p", "Asking for help: take a picture of the panel (Windows: Windows + Shift + S; Mac: Command + Shift + 4) and note what you did just before."]]},
+
+  { title: "Words explained", blocks: [
+    ["dl", [
+      ["OPERATE / STANDBY", "OPERATE: the amp amplifies. STANDBY: it passes the signal through without amplifying."],
+      ["ATU", "The amp's built-in antenna tuner. In line = working. Bypassed = out of the way."],
+      ["VFO", "The radio's tuning frequency (VFO A is the normal one; VFO B is used for the transmit side in split)."],
+      ["TCI", "A connection built into Zeus that lets other programs get radio information, such as tune, split and receive level. It is off until you turn it on in Zeus."],
+      ["UDP port 1500", "How this panel talks to the amp over the network. You normally never need to change it."],
+      ["Wake-on-LAN", "A network signal that switches the amp on from off."],
+      ["Drive", "The power going into the amp from the radio."]]]]},
+
+  { title: "About, licence and warning", blocks: [
+    ["warn", "No warranty. Use at your own risk. This add-on is shared by one radio operator, \"as is\". There is no warranty of any kind: no promise that it works, that it is safe, or that it suits your equipment or purpose. Amplifiers, radios and antennas can be damaged, and RF can be dangerous. You are responsible for checking that it behaves correctly with your own station and for operating within your licence. The author is not liable for any damage or loss. It is not made, approved or supported by Elecraft, FlexRadio or the Zeus project."],
+    ["p", "Elecraft KPA1500 for Zeus, by KW4EX. Source and downloads: github.com/kw4ex/zeus-amp. Licence: GPL-2.0-or-later. \"Elecraft\" and \"KPA1500\" are names of Elecraft, Inc.; this is an independent, community-made add-on."]]},
+];
+
+function helpBlock(b, key) {
+  const [kind, body] = b;
+  if (kind === "p") return h("p", { key, className: c("hp") }, body);
+  if (kind === "ul") return h("ul", { key, className: c("hl") }, body.map((t, i) => h("li", { key: i }, t)));
+  if (kind === "ol") return h("ol", { key, className: c("hl") }, body.map((t, i) => h("li", { key: i }, t)));
+  if (kind === "tip") return h("div", { key, className: c("hnote") }, body);
+  if (kind === "warn") return h("div", { key, className: c("hnote hwarn") }, body);
+  return h("dl", { key, className: c("hdl") }, body.map(([t, d], i) =>
+    [h("dt", { key: "t" + i }, t), h("dd", { key: "d" + i }, d)]));
+}
+
+function helpPageHtml(version) {
+  const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const blk = (b) => {
+    const [k, body] = b;
+    if (k === "p") return "<p>" + esc(body) + "</p>";
+    if (k === "ul" || k === "ol") return "<" + k + ">" + body.map((t) => "<li>" + esc(t) + "</li>").join("") + "</" + k + ">";
+    if (k === "tip") return "<div class=\"note\">" + esc(body) + "</div>";
+    if (k === "warn") return "<div class=\"note warn\">" + esc(body) + "</div>";
+    return "<dl>" + body.map(([t, d]) => "<dt>" + esc(t) + "</dt><dd>" + esc(d) + "</dd>").join("") + "</dl>";
+  };
+  return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
+    "<title>Elecraft KPA1500 for Zeus – Help</title><style>" +
+    "body{font:16px/1.5 system-ui,Segoe UI,Helvetica,Arial,sans-serif;color:#1b232c;max-width:46rem;margin:2rem auto;padding:0 1rem}" +
+    "h1{font-size:1.7rem;margin:0 0 .2rem}h2{font-size:1.25rem;margin:1.8rem 0 .4rem;padding-bottom:.2rem;border-bottom:2px solid #1f5fbf;color:#1f5fbf}" +
+    ".sub{color:#55616d;margin:0 0 1rem}.note{background:#eef3fa;border:1px solid #c9d7ec;border-radius:6px;padding:.6rem .8rem;margin:.6rem 0}" +
+    ".warn{background:#fff6e0;border-color:#e0a72e}dt{font-weight:700;margin-top:.6rem}dd{margin:0 0 0 1rem}li{margin:.2rem 0}" +
+    "nav a{display:inline-block;margin:0 .8rem .2rem 0}@media print{nav{display:none}}</style></head><body>" +
+    "<h1>Elecraft KPA1500 for Zeus</h1><p class=\"sub\">Help for operators, version " + esc(version || "") + " &middot; KW4EX</p><nav>" +
+    HELP.map((s, i) => "<a href=\"#s" + i + "\">" + esc(s.title) + "</a>").join("") + "</nav>" +
+    HELP.map((s, i) => "<h2 id=\"s" + i + "\">" + esc(s.title) + "</h2>" + s.blocks.map(blk).join("")).join("") +
+    "</body></html>";
+}
+
+function HelpView(p) {
+  const [note, setNote] = useState(null);
+  const page = () => helpPageHtml(p.version);
+  const openPage = () => {
+    setNote(null);
+    try {
+      const url = URL.createObjectURL(new Blob([page()], { type: "text/html" }));
+      const w = window.open(url, "_blank");
+      if (!w) setNote("Your browser would not open a new window. Use \"Save as a file\" instead, then open the saved file.");
+    } catch (e) { setNote("Could not open a page here. Use \"Save as a file\" instead."); }
+  };
+  const savePage = () => {
+    setNote(null);
+    try {
+      const url = URL.createObjectURL(new Blob([page()], { type: "text/html" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = "KPA1500-for-Zeus-help.html";
+      document.body.appendChild(a); a.click(); a.remove();
+      setNote("Saved as KPA1500-for-Zeus-help.html (look in your Downloads folder). Double-click it to read it in your browser.");
+    } catch (e) { setNote("Saving a file is not possible from here. The same help is in this panel."); }
+  };
+  return h("div", { className: c("overlay"), style: { alignItems: "flex-start", overflow: "auto" } },
+    h("div", { className: c("card"), role: "dialog", "aria-modal": "true", "aria-label": "KPA1500 help", style: { maxWidth: "620px", width: "100%" } },
+      h("div", { className: c("row spread") }, h("h3", null, "KPA1500 help"),
+        h("button", { type: "button", className: c("b"), onClick: p.onClose, autoFocus: true }, "Close")),
+      h("div", { className: c("row") },
+        h("button", { type: "button", className: c("b"), onClick: openPage }, "Open as a web page"),
+        h("button", { type: "button", className: c("b"), onClick: savePage }, "Save as a file")),
+      note ? h("div", { className: c("muted"), role: "status" }, note) : null,
+      HELP.map((s, i) => h("details", { key: i, className: c("hsec"), open: !!s.open },
+        h("summary", null, s.title), s.blocks.map((b, j) => helpBlock(b, j)))),
+      h("div", { className: c("btns") }, h("button", { type: "button", className: c("b"), onClick: p.onClose }, "Close"))));
 }
 
 // Live per-band limits for the "No antenna?" check, inside Settings.
@@ -695,7 +969,8 @@ function Settings(p) {
   if (draft.serialPort && portList.indexOf(draft.serialPort) < 0) portList.unshift(draft.serialPort);
 
   return h("div", { className: c("card"), role: "dialog", "aria-modal": "true", "aria-label": "KPA1500 settings", style: { maxWidth: "560px", width: "100%" } },
-    h("h3", null, "KPA1500 settings"),
+    h("div", { className: c("row spread") }, h("h3", null, "KPA1500 settings"),
+      p.onHelp ? h("button", { type: "button", className: c("b"), onClick: p.onHelp }, "Help — how to use this panel") : null),
 
     h("div", { className: c("glab") }, "Connection"),
     h("div", { className: c("row"), role: "radiogroup", "aria-label": "Connection type" },
@@ -799,6 +1074,7 @@ function Settings(p) {
 
     h("div", { className: c("glab") }, "Controls at the top — tick to show, ▲▼ to arrange"),
     ControlOrderEditor(draft, setDraft),
+    MiniItemsEditor(draft, setDraft),
     h("div", { className: c("checks") },
       Check(draft, setDraft, "ctlClearFault", "Clear-fault button (in the fault warning)")),
 

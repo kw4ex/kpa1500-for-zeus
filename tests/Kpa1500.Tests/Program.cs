@@ -53,6 +53,8 @@ Check("control order: unknown dropped, repeats removed, missing appended",
     PluginConfig.NormalizeControlOrder("band, ANT,band,atu") == "band,atu,power,operate,tunestby,antenna,atutune,fan");
 Check("Standby-on-Tune switches TCI on", PluginConfig.Sanitize(new PluginConfig { StandbyOnTune = true, TciEnabled = false }).TciEnabled);
 Check("control order default is complete", PluginConfig.NormalizeControlOrder(null) == PluginConfig.DefaultControlOrder);
+Check("mini items normalised (known only, fixed order)", PluginConfig.NormalizeMiniItems("swr, bogus,POWER,power") == "power,swr");
+Check("mini items default when empty", PluginConfig.NormalizeMiniItems("") == PluginConfig.DefaultMiniItems && PluginConfig.NormalizeMiniItems(null) == PluginConfig.DefaultMiniItems);
 if (badCfg.Count != 2) Console.WriteLine("::warning::config errors: " + string.Join(" | ", badCfg));
 Check("default config is valid", new PluginConfig().Validate().Count == 0);
 

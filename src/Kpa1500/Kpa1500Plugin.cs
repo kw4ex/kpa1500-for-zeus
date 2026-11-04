@@ -27,7 +27,7 @@ public sealed record OnRequest(bool On);
 public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
 {
     /// <summary>Keep identical to plugin.json "version".</summary>
-    public const string ManifestVersion = "1.1.10";
+    public const string ManifestVersion = "1.1.11";
     private const string SettingsKey = "config";
 
     private IPluginContext? _ctx;
@@ -196,6 +196,7 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
                     mac = s.Mac,
                     powerOnInProgress = s.PowerOnInProgress,
                     freqKhz = s.AmpFreqKhz,
+                    sentKhz = amp.LastFreqSentKhz > 0 ? amp.LastFreqSentKhz : (long?)null,
                     driveW,
                     driveSource,
                     firmware = s.Firmware,
