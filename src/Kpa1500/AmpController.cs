@@ -611,9 +611,11 @@ public sealed class AmpController : IAsyncDisposable
     }
 
     /// <summary>
-    /// The frequency the amp should be set for: TCI's transmit VFO (VFO B when
-    /// split is on) when TCI is connected and has reported one, otherwise the
-    /// frequency Zeus gives plugins. 0 = nothing known yet.
+    /// The frequency the amp should be set for: the frequency Zeus gives
+    /// plugins (it is the one Zeus itself shows), except in split, where TCI's
+    /// transmit VFO (VFO B) is used. TCI's VFO A is only a fallback when Zeus
+    /// gives no radio state: some Zeus builds (e.g. Zeus Link Flex) report a
+    /// TCI VFO that is not the one on screen. 0 = nothing known yet.
     /// </summary>
     public (long Hz, string Source) TrackHz
     {
@@ -621,10 +623,16 @@ public sealed class AmpController : IAsyncDisposable
         {
             var tci = _tci;
             var tciHz = tci?.TxHz ?? 0;
-            if (tci is not null && tciHz > 0) return (tciHz, tci.Split ? "TCI VFO B (split)" : "TCI VFO A");
-            return _radio is null ? (0, "") : (Interlocked.Read(ref _radioHz), "Zeus");
+            if (tci is not null && tci.Split && tciHz > 0) return (tciHz, "TCI VFO B (split)");
+            var radioHz = _radio is null ? 0 : Interlocked.Read(ref _radioHz);
+            if (radioHz > 0) return (radioHz, "Zeus");
+            if (tci is not null && tciHz > 0) return (tciHz, "TCI VFO A");
+            return (0, "");
         }
     }
+
+    /// <summary>What Zeus's TCI says VFO A is (0 = unknown); shown only for diagnosis.</summary>
+    public long TciVfoHz => _tci?.TxHz ?? 0;
 
     private async Task TrackRadioAsync(KpaLink link, PluginConfig cfg, bool tx, CancellationToken ct)
     {

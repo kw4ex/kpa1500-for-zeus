@@ -27,7 +27,7 @@ public sealed record OnRequest(bool On);
 public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
 {
     /// <summary>Keep identical to plugin.json "version".</summary>
-    public const string ManifestVersion = "1.1.9";
+    public const string ManifestVersion = "1.1.10";
     private const string SettingsKey = "config";
 
     private IPluginContext? _ctx;
@@ -206,6 +206,7 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
                     available = amp.RadioAttached || hz > 0,
                     frequencyHz = hz,
                     source = hzSource,
+                    tciHz = amp.TciVfoHz,
                     band = BandPlan.FromHz(hz) is var code and >= 0 ? KpaProtocol.BandName(code) : null,
                     mode = amp.RadioMode,
                     mox = amp.RadioMox,

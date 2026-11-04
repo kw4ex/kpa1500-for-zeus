@@ -377,6 +377,8 @@ function makePanel(callBackend) {
         if (!cfg.ctlBand) return null;
         const radioText = status.radio && status.radio.available && status.radio.band
           ? (status.radio.source || "Zeus") + ": " + status.radio.band + " · " + (status.radio.frequencyHz / 1000).toFixed(1) + " kHz"
+            + (status.radio.tciHz && Math.abs(status.radio.tciHz - status.radio.frequencyHz) > 2000
+                ? " (TCI says " + (status.radio.tciHz / 1000).toFixed(1) + ", ignored)" : "")
           : "Zeus radio state not available";
         return h("div", { key: "band", className: c("cblock") },
           h("div", { className: c("bands"), role: "group", "aria-label": "Amplifier band" },

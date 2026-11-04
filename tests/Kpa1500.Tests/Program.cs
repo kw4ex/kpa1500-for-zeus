@@ -217,6 +217,24 @@ using (var amp = new FakeAmp())
     Check("never keyed: no MOX command exists", !amp.Received.Any(c => c.StartsWith("TX") || c.StartsWith("^TX")));
 }
 
+Console.WriteLine("Frequency follows Zeus, not a stale TCI VFO (Zeus Link Flex)");
+using (var amp = new FakeAmp())
+using (var zt = new FakeTci { VfoHz = 14_200_000 })
+{
+    var radio = new FakeRadio();
+    radio.SetFrequency(7_074_000);
+    await using var ctl = new AmpController(NullLogger.Instance, new EventLog(500));
+    ctl.AttachRadio(radio);
+    ctl.Start(PluginConfig.Sanitize(new PluginConfig
+    {
+        Host = "127.0.0.1", NetPort = amp.Port, PollMs = 50,
+        TciEnabled = true, TciHost = "localhost", TciPort = zt.Port, AutoTuneDetect = false, StandbyOnTune = true,
+    }));
+    Check("TCI connected", await WaitFor(() => ctl.Tci.Connected, 8));
+    await Task.Delay(800);           // the stale vfo:0,0,14200000 has been seen
+    Check("amp follows Zeus frequency (7074), not TCI's 14200", await WaitFor(() => amp.Freq == 7074, 5) && ctl.TrackHz.Source == "Zeus");
+}
+
 Console.WriteLine("Standby-on-Tune with a Zeus-like TCI (answers only when asked)");
 using (var amp = new FakeAmp())
 using (var zt = new FakeTci())

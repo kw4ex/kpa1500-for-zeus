@@ -16,6 +16,7 @@ public sealed class FakeTci : IDisposable
     public int Port { get; }
     public volatile bool TunOn;
     public volatile int TuneQueries;
+    public long VfoHz;            // if set, every answer also carries "vfo:0,0,<VfoHz>;"
 
     public FakeTci()
     {
@@ -57,6 +58,7 @@ public sealed class FakeTci : IDisposable
                     if (c == "tune:0") { TuneQueries++; reply.Append($"tune:0,{(TunOn ? "true" : "false")};"); }
                     else if (c == "trx:0") reply.Append("trx:0,false;");
                 }
+                if (VfoHz > 0) reply.Append($"vfo:0,0,{VfoHz};");
                 if (reply.Length > 0)
                     await ws.SendAsync(new ArraySegment<byte>(Encoding.ASCII.GetBytes(reply.ToString())),
                         WebSocketMessageType.Text, true, _cts.Token).ConfigureAwait(false);
