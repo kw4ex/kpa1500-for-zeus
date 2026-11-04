@@ -19,14 +19,42 @@ src/Kpa1500/
   KpaLink.cs         one-command-in-flight request/response over a stream
   Transports.cs      UDP (default) and USB serial
   TciClient.cs       optional read-only TCI listener for tune/trx
+  FlexClient.cs      FlexRadio discovery (UDP 4992) + listen-only TCP 4992 client
+  WebHost.cs         browser page: Kestrel on 127.0.0.1 (optionally the LAN), login, Host/Origin checks
+  web/               browser page files, embedded in the DLL: index.html, help.html, login.html, react.js
   NetTools.cs        Wake-on-LAN + discovery
   PluginConfig.cs    settings, validation, sanitising
   ui/kpa1500.es.js   panel (plain ESM, React.createElement, Zeus tokens only)
   build-package.ps1  catalog packager, unmodified copy
-tests/Kpa1500.Tests  fake KPA1500 over loopback UDP + unit tests
+tests/Kpa1500.Tests  fake KPA1500 (and a fake FlexRadio, TCI and web clients) over loopback UDP + unit tests
 sdk/                 vendored Zeus plugin SDK snapshot (ABI 1 / 1.5.0) — do not edit
 docs/preview/        panel renders against a mock backend (not hardware screenshots)
 ```
+
+## Radio source and the browser page
+
+- **Radio source** (`PluginConfig.RadioSource`): `zeus` (default) uses Zeus's
+  radio state; `flex` makes `AmpController.TrackHz`, `TxLocked` and `TuneSignal`
+  use `FlexClient` (slice `RF_frequency`/`tx`/`active`, `interlock state`,
+  `transmit tune/mox`) because Zeus Link Flex reports a stale frequency to
+  plugins. `FlexClient` only sends `sub slice|tx|radio all` and `ping`. The
+  radio is found by serial through discovery; with none chosen it uses the only
+  Flex, or the one this computer already has an open TCP 4992 connection to
+  (`FlexClient.ConnectedTo`). The Flex has no receive level here, so the
+  No-antenna check runs only if TCI is on (the Flex TCI port, normally 40002).
+- **Browser page**: `WebHost` starts a second Kestrel app inside the plugin and
+  maps the same `MapEndpoints` routes under `/api`, so the Zeus panel and the
+  browser use one API. The panel module is served unchanged from the DLL
+  (embedded resource `web/ui/kpa1500.es.js`) with `react` mapped by an import map
+  to the bundled `web/react.js` (see `web/THIRD-PARTY.txt` for how it is built).
+  Loopback visitors need no login; network visitors (opt-in `WebLan`) sign in
+  with a PBKDF2-hashed password (`WebAuth`, own settings key `webauth`, never in
+  `PluginConfig`) unless `WebRequirePassword` is off. Every request is checked
+  for Host (loopback only) and Origin (changes only from the page itself).
+- Gotcha: MSBuild treats `.es.` in a file name as a Spanish culture and moves
+  the resource to a satellite assembly. The embedded `kpa1500.es.js` therefore
+  sets `WithCulture="false"` in both csproj files.
+- The web page needs no `fileSystemRead`: everything is served from the DLL.
 
 ## Build, test, package
 
@@ -36,11 +64,11 @@ writes everything to `build-log.txt`.
 
 | Computer | Install file |
 | --- | --- |
-| Windows | `com.kw4ex.zeus.kpa1500-1.4.1.zip` |
-| Mac with Apple silicon (M1–M4) | `com.kw4ex.zeus.kpa1500-1.4.1-osx-arm64.zip` |
-| Intel Mac | `com.kw4ex.zeus.kpa1500-1.4.1-osx-x64.zip` |
-| Linux PC (64-bit Intel/AMD) | `com.kw4ex.zeus.kpa1500-1.4.1-linux-x64.zip` |
-| Raspberry Pi 4/5 (64-bit OS) | `com.kw4ex.zeus.kpa1500-1.4.1-linux-arm64.zip` |
+| Windows | `com.kw4ex.zeus.kpa1500-1.4.2.zip` |
+| Mac with Apple silicon (M1–M4) | `com.kw4ex.zeus.kpa1500-1.4.2-osx-arm64.zip` |
+| Intel Mac | `com.kw4ex.zeus.kpa1500-1.4.2-osx-x64.zip` |
+| Linux PC (64-bit Intel/AMD) | `com.kw4ex.zeus.kpa1500-1.4.2-linux-x64.zip` |
+| Raspberry Pi 4/5 (64-bit OS) | `com.kw4ex.zeus.kpa1500-1.4.2-linux-arm64.zip` |
 
 The packages differ only in the bundled serial-port library (macOS adds
 `libSystem.IO.Ports.Native.dylib`, Linux `libSystem.IO.Ports.Native.so`); the

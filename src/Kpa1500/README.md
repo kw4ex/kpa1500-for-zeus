@@ -25,6 +25,39 @@ as a panel inside Zeus. It is the Zeus successor to the
 - **Remote power-on** with Wake-on-LAN plus `^ON1;` retries for 15 seconds.
   The amp's MAC address is learned automatically the first time the amp is on.
 - **Find amplifier** searches your local network for KPA1500s.
+- **FlexRadio support.** Setting *My radio is* to *A FlexRadio* makes the panel
+  listen to the Flex itself (TCP 4992) for frequency, mode and transmit/tune,
+  instead of relying on what Zeus reports (Zeus Link Flex gives plugins a stale
+  frequency). It follows the Flex that Zeus is already connected to, or you
+  choose one of several FlexRadios found on the network (kept by serial
+  number). It only listens; it never changes the radio. The default, *Any
+  radio*, behaves as before.
+- **"No antenna?" warning.** Warns when the receive level on a band falls below
+  a limit (learned per band, or typed). With a FlexRadio it needs TCI on the
+  Flex TCI port Zeus shows (normally 40002).
+- **Small view and Help.** The ⇕ button switches to a two-line view (remembered
+  per panel); ? opens a plain-language help page.
+- **Browser page.** The same panel, and the help, in a web browser (see below).
+- Number boxes in Settings change only when typed in (no wheel or arrow keys).
+
+## Browser page
+
+While Zeus runs, the feature also serves its panel as a web page:
+
+- **This computer:** `http://127.0.0.1:8081/` (help: `/help`). No password.
+- **Other computers, tablets, phones (off by default):** Settings → Browser
+  page → *Allow other computers, tablets and phones on my network*. By default
+  they must sign in with a password (8–100 characters, stored only as a salted
+  hash, never shown back). *Ask for a password* can be unticked, which lets
+  anyone on the network use it. The settings list the addresses to open.
+- Port: 8081 by default, 1024–65535, changeable in Settings.
+- The page is plain http (not encrypted): use it only on a network you trust.
+- Protections: requests from this computer must use the loopback address (no
+  DNS rebinding); changes must come from the page itself (other web sites
+  cannot press buttons); network sign-in uses an HttpOnly, SameSite=Strict
+  cookie valid for 12 hours; five wrong passwords in a minute lock that address
+  out for a minute.
+- Your computer's firewall may ask once to allow incoming connections.
 
 ## Safety rules
 
@@ -62,6 +95,11 @@ TUNE flag. Three sources are offered; use any combination:
 - *Power-on not confirmed*: check NET WAKE on LAN = ON, the MAC address, and
   that Zeus and the amp are on the same network.
 - *TCI WAIT*: Zeus's TCI server is off or on a different port.
+- *Amp frequency stuck / not following a FlexRadio*: set *My radio is* to *A
+  FlexRadio* (Settings → Radio).
+- *RX level "n/a (Flex)"*: tick *Use Zeus TCI* and use the Flex TCI port (40002).
+- *Browser page won't open*: see the *Browser page* line in Settings (address,
+  or why it could not start, e.g. port in use).
 - Turn on **Event log** under Telemetry shown to see every command sent.
 
 ## No warranty — use at your own risk

@@ -754,10 +754,11 @@ const HELP = [
       "In Zeus's own settings (not this panel's), turn TCI on. Zeus's TCI port is normally 40001.",
       "In this panel's ⚙ Settings, under Standby on Tune, tick Use Zeus TCI. Leave the host 127.0.0.1, set the port to 40001 (or your Zeus's number) and leave the receiver at 0. Click Save.",
       "A green TCI tag appears on the top line. If it says TCI WAIT, the line in Settings tells you why. Usually TCI is still off in Zeus, or the port number is different."]],
-    ["p", "A ⚠ on the TUNE STBY button means Zeus TCI is not connected, so the button cannot do its job yet."]]},
+    ["p", "A ⚠ on the TUNE STBY button means Zeus TCI is not connected, so the button cannot do its job yet."],
+    ["tip", "FlexRadio: with \"My radio is\" set to \"A FlexRadio\", the panel also listens to the Flex itself for TUNE and transmit. For best results still turn on Use Zeus TCI and use the Flex TCI port that Zeus shows (normally 40002)."]]},
 
   { title: "\"No antenna?\" warning (optional)", blocks: [
-    ["p", "If the receive level on a band drops below a limit, it usually means no antenna is connected, and the panel shows a warning. It can also hold the amp in STANDBY. It needs TCI (see above)."],
+    ["p", "If the receive level on a band drops below a limit, it usually means no antenna is connected, and the panel shows a warning. It can also hold the amp in STANDBY. It needs TCI (see above). With a FlexRadio selected, use the Flex TCI port that Zeus shows (normally 40002)."],
     ["ul", [
       "In Settings, under No antenna? check, tick Warn when the receive level says no antenna and choose Warn only or Warn and keep the amp in STANDBY.",
       "The easiest choice is to leave Auto-learn ticked. The panel learns each band's normal noise while you listen.",
@@ -767,9 +768,13 @@ const HELP = [
     ["p", "A switched-in attenuator, the preamp being off, a very narrow filter or a dead band at night can all lower the level and cause a false warning."]]},
 
   { title: "Choosing what the panel shows", blocks: [
+    ["p", "The ⇕ button at the top switches between the full panel and a small two-line view (power, status, frequency, forward power and SWR by default). The choice is remembered for each panel, so a small one can sit in one workspace and a full one in another. In Settings you can choose which items the small view shows. The ? button opens this help."],
     ["ul", [
       "Telemetry shown: untick any meter or reading you do not want.",
       "Controls at the top: tick or untick a button to show or hide it. Press ▲ or ▼ to move it. Default order puts them back.",
+      "Radio: choose Any radio (what Zeus reports) or A FlexRadio (read directly), and which Flex if there are several.",
+      "Browser page: show the panel on a web page, and optionally let other devices use it (see Using it in a web browser).",
+      "Number boxes (ports and so on) change only when you type in them. The mouse wheel and arrow keys do nothing.",
       "Display: Compact layout makes the panel smaller. You can also choose °C or °F and the warning points for temperature and SWR.",
       "Behaviour: choose whether to ask before power off or on, and whether the amp follows the VFO."]],
     ["p", "After changing anything in Settings, scroll down and click Save."]]},
@@ -801,7 +806,11 @@ const HELP = [
       ["Find amplifier finds nothing", "The computer and the amp must be on the same home network. Some Wi-Fi routers block searches. Type the amp's address instead (from its NET menu)."],
       ["The amp does not follow Zeus", "Look at the grey line under the band buttons and check that Amp follows the VFO is ticked in Settings. Close any other program that controls the amp, such as the Thetis bridge or a logger that sets frequency. Turn the Event log on in Settings and look for \"Frequency … sent to amp\"."],
       ["Yellow bar: another program is also controlling the amp", "Something else keeps changing the amp's frequency, usually the Thetis bridge. Close it."],
-      ["TCI WAIT, or RX level says \"TCI off\"", "Turn TCI on in Zeus and check the port number (40001)."],
+      ["TCI WAIT, or RX level says \"TCI off\"", "Turn TCI on in Zeus and check the port number (40001). With a FlexRadio the receive level comes from the Flex TCI port (normally 40002)."],
+      ["Amp freq is stuck, or does not follow a FlexRadio", "In Settings under Radio, set \"My radio is\" to \"A FlexRadio\". The grey line under the band buttons then says \"FlexRadio: …\". If it says it cannot find the Flex, check the radio is on and on the same network, or type its address under Radio address."],
+      ["RX level says \"n/a (Flex)\"", "The receive level and the No-antenna check need TCI in Flex mode: tick Use Zeus TCI and set the port to the Flex TCI port (normally 40002)."],
+      ["The browser page does not open", "Zeus must be running. Look at the Browser page line in Settings: it shows the address, or why it could not start (for example the port is in use: pick another number and Save)."],
+      ["Another computer or phone cannot open the browser page", "In Settings under Browser page, tick Allow other computers, tablets and phones on my network and Save. Use the address listed there. Allow incoming connections if the computer asks. Both devices must be on the same network."],
       ["TUNE STBY shows ⚠, or TUNE does not put the amp in STANDBY", "Zeus TCI is not connected. See Standby on Tune above."],
       ["Drive is blank during TUNE", "It needs TCI connected (the green TCI tag)."],
       ["POWER on does not wake the amp", "Turn on NET WAKE on LAN in the amp, or turn the amp on once from its front panel so the panel learns its network ID."],
@@ -814,7 +823,9 @@ const HELP = [
       ["OPERATE / STANDBY", "OPERATE: the amp amplifies. STANDBY: it passes the signal through without amplifying."],
       ["ATU", "The amp's built-in antenna tuner. In line = working. Bypassed = out of the way."],
       ["VFO", "The radio's tuning frequency (VFO A is the normal one; VFO B is used for the transmit side in split)."],
-      ["TCI", "A connection built into Zeus that lets other programs get radio information, such as tune, split and receive level. It is off until you turn it on in Zeus."],
+      ["TCI", "A connection built into Zeus that lets other programs get radio information, such as tune, split and receive level. It is off until you turn it on in Zeus. Zeus has two: the main one (port 40001) and, with a FlexRadio, a Flex TCI (port 40002)."],
+      ["FlexRadio source", "A setting that makes the panel listen to a FlexRadio directly for its frequency and transmit state, instead of relying on what Zeus reports."],
+      ["Browser page", "The same panel shown in a web browser, at an address like http://127.0.0.1:8081/ ."],
       ["UDP port 1500", "How this panel talks to the amp over the network. You normally never need to change it."],
       ["Wake-on-LAN", "A network signal that switches the amp on from off."],
       ["Drive", "The power going into the amp from the radio."]]]]},
