@@ -27,7 +27,7 @@ public sealed record OnRequest(bool On);
 public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
 {
     /// <summary>Keep identical to plugin.json "version".</summary>
-    public const string ManifestVersion = "1.3.1";
+    public const string ManifestVersion = "1.4.0";
     private const string SettingsKey = "config";
 
     private IPluginContext? _ctx;
@@ -36,6 +36,8 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
     private Timer? _radioProbe;
     private WebHost? _web;
     private string _webError = "";
+    private const string WebAuthKey = "webauth";
+    private WebAuth? _webAuth;
     private readonly SemaphoreSlim _webGate = new(1, 1);
     private Timer? _noAntSave;
     private const string NoAntKey = "noant";
@@ -74,6 +76,8 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
         }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         _amp.Start(cfg);
         _events.Add("info", $"Elecraft KPA1500 v{ManifestVersion} ready.");
+        try { _webAuth = await context.Settings.GetAsync<WebAuth>(WebAuthKey, ct).ConfigureAwait(false); }
+        catch (Exception ex) { context.Logger.LogWarning(ex, "KPA1500 browser-page password unreadable"); }
         _ = ApplyWebAsync(cfg, TimeSpan.Zero);
     }
 
@@ -87,18 +91,19 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
         try
         {
             if (wait > TimeSpan.Zero) await Task.Delay(wait).ConfigureAwait(false);
-            if (_web is { } cur && cfg.WebEnabled && cur.Port == cfg.WebPort) return;
+            var lan = cfg.WebLan && _webAuth is not null;
+            if (_web is { } cur && cfg.WebEnabled && cur.Port == cfg.WebPort && cur.Lan == lan) return;
             if (_web is not null)
             {
                 await _web.DisposeAsync().ConfigureAwait(false);
                 _web = null;
             }
-            _webError = "";
+            _webError = cfg.WebLan && _webAuth is null ? "Choose a password to allow other devices; only this computer can connect for now." : "";
             if (!cfg.WebEnabled) return;
             try
             {
-                _web = await WebHost.StartAsync(cfg.WebPort, ManifestVersion, MapEndpoints).ConfigureAwait(false);
-                _events.Add("info", $"Browser page ready: {_web.Url}");
+                _web = await WebHost.StartAsync(cfg.WebPort, lan, lan ? VerifyWebPassword : null, ManifestVersion, MapEndpoints).ConfigureAwait(false);
+                _events.Add("info", $"Browser page ready: {_web.Url}" + (lan ? " (and on the network, password protected)" : ""));
             }
             catch (Exception ex)
             {
@@ -108,6 +113,8 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
         }
         finally { _webGate.Release(); }
     }
+
+    private bool VerifyWebPassword(string pw) => _webAuth?.Verify(pw) ?? false;
 
     public async Task ShutdownAsync(CancellationToken ct)
     {
@@ -253,7 +260,12 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
                     hz = fx.Hz, mode = fx.Mode, tx = fx.Tx, tune = fx.Tune,
                     radio = fx.Radio is { } r ? new { r.Model, r.Nickname, r.Serial, r.Ip, r.Port } : null,
                 },
-                web = new { enabled = amp.Config.WebEnabled, running = _web?.Running ?? false, url = _web?.Url, error = _webError },
+                web = new
+                {
+                    enabled = amp.Config.WebEnabled, running = _web?.Running ?? false, url = _web?.Url, error = _webError,
+                    lan = _web?.Lan ?? false, passwordSet = _webAuth is not null,
+                    lanUrls = _web is { Lan: true } w ? NetTools.LocalIPv4().Select(a => $"http://{a.Address}:{w.Port}/").ToArray() : Array.Empty<string>(),
+                },
                 tx = amp.Transmitting,
                 pendingBand = amp.PendingBand >= 0 ? KpaProtocol.BandName(amp.PendingBand) : null,
                 noAnt = NoAntJson(amp),
@@ -276,10 +288,23 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
             var errors = body.Validate();
             if (errors.Count > 0)
                 return Results.Json(new { ok = false, message = string.Join(" ", errors) }, statusCode: 400);
+            // The browser-page password is write-only: hashed here, never stored in the settings or sent back.
+            var newPw = body.WebPassword ?? "";
+            if (newPw != "" && (newPw.Length is < 8 or > 100))
+                return Results.Json(new { ok = false, message = "The browser-page password must be 8 to 100 characters." }, statusCode: 400);
+            if (body.WebLan && newPw == "" && _webAuth is null)
+                return Results.Json(new { ok = false, message = "Choose a browser-page password before allowing other devices." }, statusCode: 400);
             // Keep a MAC the feature learned if the panel's copy predates it.
             if (string.IsNullOrWhiteSpace(body.AmpMac)) body.AmpMac = amp.Config.AmpMac;
             var cfg = PluginConfig.Sanitize(body);
             await ctx.Settings.SetAsync(SettingsKey, cfg, ct).ConfigureAwait(false);
+            if (newPw != "")
+            {
+                var auth = WebAuth.Create(newPw);
+                await ctx.Settings.SetAsync(WebAuthKey, auth, ct).ConfigureAwait(false);
+                _webAuth = auth;
+                _web?.ClearSessions();
+            }
             amp.ApplyConfig(cfg);
             _ = ApplyWebAsync(cfg, TimeSpan.FromSeconds(1.5));
             return Results.Ok(cfg);

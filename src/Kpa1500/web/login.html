@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Elecraft KPA1500 - sign in</title>
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<style>
+:root{color-scheme:light dark;--bg:#ffffff;--fg:#0d1218;--mut:#4d5a67;--line:#b5c0cc;--acc:#1f6fe0;--bad:#d22b2b}
+@media (prefers-color-scheme: dark){:root{--bg:#0b0e13;--fg:#f2f5f8;--mut:#9aa6b2;--line:#37475a;--acc:#2f8cff;--bad:#ff6b6b}}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:"Segoe UI",system-ui,-apple-system,sans-serif;display:flex;justify-content:center;padding:48px 16px}
+form{width:100%;max-width:340px}
+h1{font-size:1.2rem;margin:0 0 4px}
+p{color:var(--mut);font-size:.9rem;margin:4px 0 14px}
+input,button{width:100%;box-sizing:border-box;font-size:1rem;padding:10px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--fg)}
+button{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600;margin-top:10px;cursor:pointer}
+#bad{color:var(--bad);display:none;margin:8px 0 0;font-size:.9rem}
+</style></head><body>
+<form method="post" action="/login">
+  <h1>Elecraft KPA1500</h1>
+  <p>Version {{VERSION}}. Enter the browser-page password set in the panel's Settings.</p>
+  <input type="password" name="password" autocomplete="current-password" autofocus aria-label="Password">
+  <div id="bad" role="alert">That password did not work.</div>
+  <button type="submit">Sign in</button>
+</form>
+<script>if (location.search.indexOf("bad=1") >= 0) document.getElementById("bad").style.display = "block";</script>
+</body></html>

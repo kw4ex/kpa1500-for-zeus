@@ -398,7 +398,7 @@ Console.WriteLine("Browser page");
     free.Start();
     var wport = ((System.Net.IPEndPoint)free.LocalEndpoint).Port;
     free.Stop();
-    await using var web = await WebHost.StartAsync(wport, "9.9.9", plugin.MapEndpoints);
+    await using var web = await WebHost.StartAsync(wport, false, null, "9.9.9", plugin.MapEndpoints);
     using var http = new HttpClient { BaseAddress = new Uri(web.Url) };
     var page = await http.GetStringAsync("/");
     Check("browser page served, version filled in", page.Contains("Elecraft KPA1500") && page.Contains("9.9.9") && !page.Contains("{{VERSION}}"));
@@ -421,6 +421,48 @@ Console.WriteLine("Browser page");
     var own = new HttpRequestMessage(HttpMethod.Post, "/api/connect");
     own.Headers.Add("Origin", "http://127.0.0.1:" + wport);
     Check("changes from the page itself allowed (reaches the feature)", (int)(await http.SendAsync(own)).StatusCode == 503);
+}
+
+Console.WriteLine("Browser page on the network (password)");
+{
+    var auth = WebAuth.Create("correct horse");
+    Check("password hash verifies only the right password", auth.Verify("correct horse") && !auth.Verify("wrong") && !auth.Verify(""));
+    Check("password hash is not the password", !auth.Hash.Contains("correct") && auth.Salt != "");
+    var plugin = new Kpa1500Plugin();
+    var free = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+    free.Start();
+    var wport = ((System.Net.IPEndPoint)free.LocalEndpoint).Port;
+    free.Stop();
+    var lanIp = NetTools.LocalIPv4().Select(a => a.Address).FirstOrDefault();
+    await using var web = await WebHost.StartAsync(wport, true, auth.Verify, "9.9.9", plugin.MapEndpoints);
+    using var local = new HttpClient { BaseAddress = new Uri(web.Url) };
+    Check("this computer needs no password", (int)(await local.GetAsync("/api/status")).StatusCode == 503);
+    if (lanIp is null) Console.WriteLine("  (no network address on this machine: skipped the sign-in checks)");
+    else
+    {
+        using var net = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }) { BaseAddress = new Uri($"http://{lanIp}:{wport}/") };
+        var page = await net.GetAsync("/");
+        Check("a network visitor is sent to the sign-in page", (int)page.StatusCode == 302 && page.Headers.Location?.ToString() == "/login");
+        Check("the sign-in page is shown", (await net.GetStringAsync("/login")).Contains("Sign in"));
+        Check("the API is closed to network visitors", (int)(await net.GetAsync("/api/status")).StatusCode == 401);
+        Check("the panel script is closed to network visitors", (int)(await net.GetAsync("/ui/kpa1500.es.js")).StatusCode == 302);
+        var wrong = await net.PostAsync("/login", new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("password", "nope") }));
+        Check("a wrong password is refused", (int)wrong.StatusCode == 302 && wrong.Headers.Location?.ToString() == "/login?bad=1" && !wrong.Headers.Contains("Set-Cookie"));
+        var good = await net.PostAsync("/login", new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("password", "correct horse") }));
+        var cookie = good.Headers.TryGetValues("Set-Cookie", out var sc) ? sc.First() : "";
+        Check("the right password signs in (HttpOnly, SameSite)", (int)good.StatusCode == 302 && cookie.StartsWith("kpa_session=") && cookie.Contains("httponly", StringComparison.OrdinalIgnoreCase) && cookie.Contains("samesite=strict", StringComparison.OrdinalIgnoreCase));
+        var req = new HttpRequestMessage(HttpMethod.Get, "/api/status");
+        req.Headers.Add("Cookie", cookie.Split(';')[0]);
+        Check("a signed-in visitor reaches the feature", (int)(await net.SendAsync(req)).StatusCode == 503);
+        web.ClearSessions();
+        var req2 = new HttpRequestMessage(HttpMethod.Get, "/api/status");
+        req2.Headers.Add("Cookie", cookie.Split(';')[0]);
+        Check("a new password signs everyone out", (int)(await net.SendAsync(req2)).StatusCode == 401);
+        for (var i = 0; i < 5; i++)
+            await net.PostAsync("/login", new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("password", "nope" + i) }));
+        var locked = await net.PostAsync("/login", new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("password", "correct horse") }));
+        Check("repeated wrong passwords are slowed down", (int)locked.StatusCode == 429);
+    }
 }
 
 Console.WriteLine($"\n{passed} passed, {failures} failed");

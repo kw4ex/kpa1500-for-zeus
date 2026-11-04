@@ -114,6 +114,8 @@ public sealed class PluginConfig
     // ── browser page (this computer only) ──
     public bool WebEnabled { get; set; } = true;
     public int WebPort { get; set; } = 8081;
+    public bool WebLan { get; set; }                     // also other computers/phones on the network (password needed)
+    public string WebPassword { get; set; } = "";        // write-only: a NEW password; never stored or sent back
 
     // ── display ──
     public bool Compact { get; set; }
@@ -201,6 +203,7 @@ public sealed class PluginConfig
         c.SwrWarn = double.IsNaN(c.SwrWarn) ? d.SwrWarn : Math.Clamp(c.SwrWarn, 1.1, 10);
         c.TempWarnC = Math.Clamp(c.TempWarnC, 30, 100);
         if (c.WebPort is < 1024 or > 65535) c.WebPort = d.WebPort;
+        c.WebPassword = "";
         if (c.RadioSource is not ("zeus" or "flex")) c.RadioSource = d.RadioSource;
         c.FlexSerial = (c.FlexSerial ?? "").Trim();
         if (c.FlexSerial.Length > 40) c.FlexSerial = "";
