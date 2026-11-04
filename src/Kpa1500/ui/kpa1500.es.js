@@ -440,10 +440,10 @@ function makePanel(callBackend) {
         if (!cfg.ctlBand) return null;
         const fx = status.flex;
         const radioText = fx && !(status.radio && status.radio.band)
-          ? "FlexRadio: " + (fx.connected ? "connected, waiting for a frequency…" : (fx.error || fx.notice || "looking for the radio…"))
+          ? "FlexRadio: " + (fx.connected ? "connected, waiting for a frequency…" : (fx.error || fx.notice || "looking for the Flex — is it on and on this network?"))
           : status.radio && status.radio.available && status.radio.band
           ? (status.radio.source || "Zeus") + ": " + status.radio.band + " · " + (status.radio.frequencyHz / 1000).toFixed(1) + " kHz"
-            + (status.radio.tciHz && Math.abs(status.radio.tciHz - status.radio.frequencyHz) > 2000
+            + (status.radio.source !== "FlexRadio" && status.radio.tciHz && Math.abs(status.radio.tciHz - status.radio.frequencyHz) > 2000
                 ? " (TCI says " + (status.radio.tciHz / 1000).toFixed(1) + ", ignored)" : "")
           : "Zeus radio state not available";
         return h("div", { key: "band", className: c("cblock") },
@@ -742,7 +742,8 @@ const HELP = [
       "The Amp freq tile turns amber (\"Amp freq ≠ VFO\") when the amp is more than 10 kHz away from your radio.",
       "Following is on by default. You can switch it off in Settings (Amp follows the VFO).",
       "Nothing is sent while you transmit. It is sent just after you stop."]],
-    ["p", "Using a FlexRadio (for example Zeus Link Flex)? If the amp doesn't follow the VFO, open ⚙ Settings, find Radio, and choose \"Read a FlexRadio directly\". Leave it on Automatic and the panel follows the Flex that Zeus is already connected to. If you have several radios on the network (Anan, Hermes Lite, Flex 6700, Flex 6300), click Find radios and pick the right Flex from the list. The panel only listens to the radio and never changes it. The No-antenna check is not available in this mode."],
+    ["p", "Using a FlexRadio (for example Zeus Link Flex)? If the amp doesn't follow the VFO, open ⚙ Settings, find Radio, and set \"My radio is\" to \"A FlexRadio\". Leave the choice below it on \"The Flex that Zeus is connected to\" and the panel follows that radio. If you have several radios on the network (Anan, Hermes Lite, Flex 6700, Flex 6300), click \"Choose a different Flex…\" and pick the right one from the list. Everyone else leaves it on \"Any radio\". The panel only listens to the radio and never changes it. The No-antenna check is not available in this mode."],
+    ["tip", "Number boxes in Settings (ports and so on) change only when you type in them. The mouse wheel and arrow keys do nothing, so you can't change one by accident."],
     ["tip", "If the grey line says \"(TCI says …, ignored)\", Zeus's TCI connection reported a different frequency from the one Zeus shows. The panel uses the one Zeus shows."]]},
 
   { title: "Standby on Tune (the TUNE STBY button)", blocks: [
@@ -882,6 +883,33 @@ function HelpView(p) {
 }
 
 // Live per-band limits for the "No antenna?" check, inside Settings.
+function NumBox(props) {
+  const { id, value, min, max, onCommit } = props;
+  const [text, setText] = useState(String(value));
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { if (!editing) setText(String(value)); }, [value, editing]);
+  const commit = () => {
+    setEditing(false);
+    let n = parseInt(text, 10);
+    if (isNaN(n)) n = value;
+    n = Math.min(max, Math.max(min, n));
+    setText(String(n));
+    if (n !== value) onCommit(n);
+  };
+  return h("input", {
+    id, className: c("in"), type: "text", inputMode: "numeric", autoComplete: "off", value: text,
+    title: "Type a number from " + min + " to " + max + ", then press Enter or click elsewhere.",
+    onFocus: () => setEditing(true),
+    onChange: (e) => setText(e.target.value.replace(/[^0-9]/g, "").slice(0, 6)),
+    onBlur: commit,
+    onKeyDown: (e) => {
+      if (e.key === "Enter") { e.preventDefault(); e.target.blur(); }
+      else if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault();
+    },
+    onWheel: (e) => e.preventDefault(),
+  });
+}
+
 // Radio source: what Zeus reports, or a FlexRadio read directly (several radios can be on the network).
 function FlexSettings(props) {
   const { draft, set, callBackend, status, id } = props;
@@ -898,21 +926,21 @@ function FlexSettings(props) {
   const found = (list && list.found) || [];
   const label = (r) => (r.model || "FlexRadio") + (r.nickname ? " \"" + r.nickname + "\"" : "") + " · serial " + r.serial + " · " + r.ip;
   return h("div", { key: "flexbox" },
-    Field("Radio source", id("radioSource"), h("select", { id: id("radioSource"), className: c("in"), value: draft.radioSource,
+    Field("My radio is", id("radioSource"), h("select", { id: id("radioSource"), className: c("in"), value: draft.radioSource,
       onChange: (e) => set("radioSource", e.target.value) },
-      h("option", { value: "zeus" }, "What Zeus reports (any radio)"),
-      h("option", { value: "flex" }, "Read a FlexRadio directly"))),
+      h("option", { value: "zeus" }, "Any radio (Anan, Hermes Lite, …) — use what Zeus reports"),
+      h("option", { value: "flex" }, "A FlexRadio — read it directly"))),
     h("div", { className: c("muted") }, flex
       ? "Use this for a FlexRadio (e.g. Zeus Link Flex) if the amp doesn't follow the VFO. The panel only listens to the radio; it never changes it."
       : "Anan, Hermes Lite and most other radios work with this setting."),
     flex ? [
       h("div", { key: "fxpick", className: c("row") },
         h("select", { id: id("flexSerial"), className: c("in grow"), value: draft.flexSerial, onChange: (e) => set("flexSerial", e.target.value) },
-          [h("option", { key: "", value: "" }, "Automatic (the radio Zeus is connected to)")]
+          [h("option", { key: "", value: "" }, "The Flex that Zeus is connected to (recommended)")]
             .concat(found.map((r) => h("option", { key: r.serial, value: r.serial }, label(r) + (r.zeus ? " · Zeus is using this" : ""))))
             .concat(draft.flexSerial && !found.some((r) => r.serial === draft.flexSerial)
               ? [h("option", { key: "cur", value: draft.flexSerial }, "serial " + draft.flexSerial + " (not seen just now)")] : [])),
-        h("button", { type: "button", className: c("b"), disabled: busy, onClick: search }, busy ? "Searching…" : "Find radios")),
+        h("button", { type: "button", className: c("b"), disabled: busy, onClick: search }, busy ? "Searching…" : "Choose a different Flex…")),
       list && list.message ? h("div", { key: "fxmsg", className: c("err") }, list.message) : null,
       list && list.ok && !found.length ? h("div", { key: "fxnone", className: c("muted") }, "No FlexRadio answered. Check it is on this network, or type its address below.") : null,
       Field("Radio address (optional)", id("flexHost"), h("input", { id: id("flexHost"), className: c("in"), value: draft.flexHost,
@@ -1009,8 +1037,9 @@ function Settings(p) {
   const { draft, setDraft, ports, saveErr, connected, busy } = p;
   const set = (k, v) => setDraft({ ...draft, [k]: v });
   const id = (k) => ROOT + "-cfg-" + k;
-  const numIn = (k, min, max, step) => h("input", { id: id(k), className: c("in"), type: "number", min, max, step: step || 1,
-    value: draft[k], onChange: (e) => set(k, e.target.value === "" ? "" : Number(e.target.value)) });
+  // Number boxes are plain text boxes that accept digits only. The mouse wheel and the
+  // up/down arrow keys do nothing, so a number can only be changed by typing it.
+  const numIn = (k, min, max) => h(NumBox, { key: k, id: id(k), value: draft[k], min, max, onCommit: (v) => set(k, v) });
   const portList = ports.slice();
   if (draft.serialPort && portList.indexOf(draft.serialPort) < 0) portList.unshift(draft.serialPort);
 
