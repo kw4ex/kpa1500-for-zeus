@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Elecraft KPA1500 - browser page</title>
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<style>
+:root{--font-sans:"Segoe UI",system-ui,-apple-system,sans-serif;--font-mono:ui-monospace,Consolas,Menlo,monospace;
+  --r-xs:2px;--r-sm:4px;--r-md:6px;--r-lg:999px;--dur-fast:120ms;--dur-med:200ms;--ease-out:cubic-bezier(.2,.8,.2,1);
+  --bg-0:#ffffff;--bg-1:#f6f7f9;--bg-2:#eceff3;--bg-3:#e1e6ec;--bg-inset:#ffffff;--fg-0:#0d1218;--fg-1:#26303b;--fg-2:#4d5a67;--fg-3:#6f7b87;
+  --line:#d3dae2;--line-strong:#b5c0cc;--panel-border:#d3dae2;--accent:#1f6fe0;--accent-bright:#1557b8;--ok:#1d8a4e;--amber:#b56d00;--tx:#d22b2b}
+@media (prefers-color-scheme: dark){:root{--bg-0:#0b0e13;--bg-1:#11161d;--bg-2:#18202a;--bg-3:#212b37;--bg-inset:#090c10;--fg-0:#f2f5f8;--fg-1:#cfd6de;--fg-2:#9aa6b2;--fg-3:#6c7885;
+  --line:#263240;--line-strong:#37475a;--panel-border:#263240;--accent:#2f8cff;--accent-bright:#6cb0ff;--ok:#36c275;--amber:#f0a630;--tx:#ff4d4d}}
+html,body{margin:0;background:var(--bg-0);color:var(--fg-1);font-family:var(--font-sans)}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:.4rem 1.2rem;max-width:760px;margin:0 auto;padding:14px 16px 4px}
+header h1{font-size:1.15rem;margin:0;color:var(--fg-0)}
+header a{color:var(--accent-bright);font-size:.9rem}
+header .sub{color:var(--fg-2);font-size:.85rem;flex-basis:100%}
+main{max-width:760px;margin:0 auto;padding:8px 16px 24px}
+#root{min-height:420px}
+noscript,.fail{display:block;padding:12px;border:1px solid var(--tx);color:var(--tx);border-radius:6px;margin:12px 0}
+</style>
+</head><body>
+<header>
+  <h1>Elecraft KPA1500</h1>
+  <a href="/help">Full help page</a>
+  <span class="sub">Version {{VERSION}} &middot; the same panel as in Zeus, shown in your browser. It only works on this computer. Use at your own risk; no warranty.</span>
+</header>
+<main><div id="root"></div><noscript>This page needs JavaScript.</noscript></main>
+<script type="importmap">{"imports":{"react":"/web/react.js"}}</script>
+<script type="module">
+import React, { createRoot } from "react";
+import activate from "/ui/kpa1500.es.js";
+const root = document.getElementById("root");
+try {
+  let Panel = null;
+  activate({
+    registerPanel: ({ component }) => { Panel = component; },
+    callBackend: (method, path, body) => fetch("/api" + path, {
+      method,
+      headers: body !== undefined ? { "content-type": "application/json" } : {},
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    }),
+  });
+  createRoot(root).render(React.createElement(Panel, { webPage: true }));
+} catch (e) {
+  root.innerHTML = '<div class="fail">The panel could not start: ' + String(e && e.message || e).replace(/</g, "&lt;") + '</div>';
+}
+</script>
+</body></html>

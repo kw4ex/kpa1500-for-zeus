@@ -1,0 +1,7 @@
+react.js is a minified build of React 19.2.8 and ReactDOM 19.2.8
+(MIT licence, Copyright (c) Meta Platforms, Inc. and affiliates;
+https://github.com/facebook/react). It is built with:
+  esbuild entry.js --bundle --format=esm --minify --define:process.env.NODE_ENV='"production"'
+where entry.js is:
+  import * as React from "react"; import { createRoot } from "react-dom/client";
+  export default React; export { createRoot };

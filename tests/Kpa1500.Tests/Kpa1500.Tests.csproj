@@ -14,6 +14,12 @@
     <Compile Include="../../src/Kpa1500/*.cs" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="../../src/Kpa1500/web/index.html" LogicalName="web/index.html" />
+    <EmbeddedResource Include="../../src/Kpa1500/web/help.html" LogicalName="web/help.html" />
+    <EmbeddedResource Include="../../src/Kpa1500/web/react.js" LogicalName="web/react.js" />
+    <EmbeddedResource Include="../../src/Kpa1500/ui/kpa1500.es.js" LogicalName="web/ui/kpa1500.es.js" />
+  </ItemGroup>
+  <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="../../sdk/Zeussdr.Zeus.Plugins.Contracts/Zeus.Plugins.Contracts.csproj" />
     <PackageReference Include="System.IO.Ports" Version="9.0.0" />

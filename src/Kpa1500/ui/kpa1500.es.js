@@ -658,7 +658,7 @@ function makePanel(callBackend) {
             h("button", { type: "button", className: c("b"), onClick: () => setConfirm(null) }, "Cancel"))));
     } else if (showSettings && draft) {
       overlay = h("div", { className: c("overlay"), style: { alignItems: "flex-start", overflow: "auto" } },
-        Settings({ draft, setDraft, ports, saveErr, connected, busy, found, mac: amp.mac, callBackend, tciStatus: tci, flexStatus: status.flex,
+        Settings({ draft, setDraft, ports, saveErr, connected, busy, found, mac: amp.mac, callBackend, tciStatus: tci, flexStatus: status.flex, webStatus: status.web,
           onFind: async () => {
             setFound({ searching: true });
             try { setFound(await call(callBackend, "POST", "/discover")); }
@@ -774,6 +774,13 @@ const HELP = [
       "Behaviour: choose whether to ask before power off or on, and whether the amp follows the VFO."]],
     ["p", "After changing anything in Settings, scroll down and click Save."]]},
 
+  { title: "Using it in a web browser", blocks: [
+    ["p", "The same panel is also available as a web page, handy when Zeus is full screen or you want a bigger view. While Zeus is running, open a web browser on the same computer and go to http://127.0.0.1:8081/ . The full help page is at http://127.0.0.1:8081/help ."],
+    ["ul", [
+      "Everything works the same as in Zeus: watch the meters, press the buttons, change Settings.",
+      "Only this computer can open it. Phones and other computers cannot.",
+      "To turn it off or change the port number, open Settings in the panel and look under Browser page, then click Save. If 8081 is in use by another program, pick another number such as 8082."]],
+    ["tip", "Zeus must be running with the KPA1500 feature loaded. If the page does not open, check the Browser page line in Settings."]]},
   { title: "A safe first test", blocks: [
     ["p", "Use a dummy load or a well-matched antenna and keep the radio at low power (about 10 W) for the transmit steps."],
     ["ol", [
@@ -826,7 +833,7 @@ function helpBlock(b, key) {
     [h("dt", { key: "t" + i }, t), h("dd", { key: "d" + i }, d)]));
 }
 
-function helpPageHtml(version) {
+export function helpPageHtml(version) {
   const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const blk = (b) => {
     const [k, body] = b;
@@ -1099,6 +1106,16 @@ function Settings(p) {
 
     h("div", { className: c("glab") }, "Radio"),
     h(FlexSettings, { key: "flexset", draft, set, callBackend: p.callBackend, status: p.flexStatus, id }),
+
+    h("div", { className: c("glab") }, "Browser page"),
+    h("div", { className: c("checks") }, Check(draft, setDraft, "webEnabled", "Also show this panel on a web page (this computer only)")),
+    draft.webEnabled ? Field("Web page port", id("webPort"), numIn("webPort", 1024, 65535)) : null,
+    h("div", { key: "webst", className: c(p.webStatus && p.webStatus.error ? "err" : "muted"), role: "status" },
+      !draft.webEnabled ? "Off."
+        : !p.webStatus ? "Not started yet — click Save."
+        : p.webStatus.running ? "Open " + p.webStatus.url + " in a web browser on this computer (for help: " + p.webStatus.url + "help). Only this computer can reach it."
+        : p.webStatus.error ? "Could not start: " + p.webStatus.error + " Try another port number."
+        : "Starting… Click Save if you just changed it."),
 
     h("div", { className: c("glab") }, "Standby on Tune"),
     h("div", { className: c("checks") },

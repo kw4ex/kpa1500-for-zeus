@@ -27,13 +27,16 @@ public sealed record OnRequest(bool On);
 public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
 {
     /// <summary>Keep identical to plugin.json "version".</summary>
-    public const string ManifestVersion = "1.2.3";
+    public const string ManifestVersion = "1.3.0";
     private const string SettingsKey = "config";
 
     private IPluginContext? _ctx;
     private AmpController? _amp;
     private readonly EventLog _events = new(250);
     private Timer? _radioProbe;
+    private WebHost? _web;
+    private string _webError = "";
+    private readonly SemaphoreSlim _webGate = new(1, 1);
     private Timer? _noAntSave;
     private const string NoAntKey = "noant";
 
@@ -71,10 +74,46 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
         }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         _amp.Start(cfg);
         _events.Add("info", $"Elecraft KPA1500 v{ManifestVersion} ready.");
+        _ = ApplyWebAsync(cfg, TimeSpan.Zero);
+    }
+
+    /// <summary>
+    /// (Re)start or stop the browser page to match the settings. The wait lets the reply to a
+    /// "Save" that came from the browser page itself finish before its server restarts.
+    /// </summary>
+    private async Task ApplyWebAsync(PluginConfig cfg, TimeSpan wait)
+    {
+        await _webGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (wait > TimeSpan.Zero) await Task.Delay(wait).ConfigureAwait(false);
+            if (_web is { } cur && cfg.WebEnabled && cur.Port == cfg.WebPort) return;
+            if (_web is not null)
+            {
+                await _web.DisposeAsync().ConfigureAwait(false);
+                _web = null;
+            }
+            _webError = "";
+            if (!cfg.WebEnabled) return;
+            try
+            {
+                _web = await WebHost.StartAsync(cfg.WebPort, ManifestVersion, MapEndpoints).ConfigureAwait(false);
+                _events.Add("info", $"Browser page ready: {_web.Url}");
+            }
+            catch (Exception ex)
+            {
+                _webError = ex.GetBaseException().Message;
+                _events.Add("warn", $"Browser page could not start on port {cfg.WebPort}: {_webError}");
+            }
+        }
+        finally { _webGate.Release(); }
     }
 
     public async Task ShutdownAsync(CancellationToken ct)
     {
+        await _webGate.WaitAsync(ct).ConfigureAwait(false);
+        try { if (_web is not null) await _web.DisposeAsync().ConfigureAwait(false); _web = null; }
+        finally { _webGate.Release(); }
         if (_radioProbe is not null) await _radioProbe.DisposeAsync().ConfigureAwait(false);
         if (_noAntSave is not null)
         {
@@ -214,6 +253,7 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
                     hz = fx.Hz, mode = fx.Mode, tx = fx.Tx, tune = fx.Tune,
                     radio = fx.Radio is { } r ? new { r.Model, r.Nickname, r.Serial, r.Ip, r.Port } : null,
                 },
+                web = new { enabled = amp.Config.WebEnabled, running = _web?.Running ?? false, url = _web?.Url, error = _webError },
                 tx = amp.Transmitting,
                 pendingBand = amp.PendingBand >= 0 ? KpaProtocol.BandName(amp.PendingBand) : null,
                 noAnt = NoAntJson(amp),
@@ -241,6 +281,7 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
             var cfg = PluginConfig.Sanitize(body);
             await ctx.Settings.SetAsync(SettingsKey, cfg, ct).ConfigureAwait(false);
             amp.ApplyConfig(cfg);
+            _ = ApplyWebAsync(cfg, TimeSpan.FromSeconds(1.5));
             return Results.Ok(cfg);
         });
 

@@ -111,6 +111,10 @@ public sealed class PluginConfig
     public string FlexHost { get; set; } = "";           // optional fixed address (else found by serial)
     public int FlexPort { get; set; } = 4992;
 
+    // ── browser page (this computer only) ──
+    public bool WebEnabled { get; set; } = true;
+    public int WebPort { get; set; } = 8081;
+
     // ── display ──
     public bool Compact { get; set; }
     public string TempUnit { get; set; } = "C";          // "C" | "F"
@@ -157,6 +161,7 @@ public sealed class PluginConfig
         if (NoAntBelowFloorDb is < 1 or > 30) e.Add("Margin below the noise floor must be 1–30 dB.");
         if (NoAntAboveEquipDb is < 1 or > 30) e.Add("Margin above equipment noise must be 1–30 dB.");
         if (RadioSource is not ("zeus" or "flex")) e.Add("Radio source must be zeus or flex.");
+        if (WebPort is < 1024 or > 65535) e.Add("Browser page port must be 1024–65535.");
         if ((FlexSerial ?? "").Length > 40) e.Add("FlexRadio serial is too long.");
         if ((FlexHost ?? "").Length > 253) e.Add("FlexRadio address is too long.");
         if (FlexPort is < 1 or > 65535) e.Add("FlexRadio port must be 1–65535.");
@@ -195,6 +200,7 @@ public sealed class PluginConfig
         c.MeterMaxWatts = Math.Clamp(c.MeterMaxWatts, 100, 3000);
         c.SwrWarn = double.IsNaN(c.SwrWarn) ? d.SwrWarn : Math.Clamp(c.SwrWarn, 1.1, 10);
         c.TempWarnC = Math.Clamp(c.TempWarnC, 30, 100);
+        if (c.WebPort is < 1024 or > 65535) c.WebPort = d.WebPort;
         if (c.RadioSource is not ("zeus" or "flex")) c.RadioSource = d.RadioSource;
         c.FlexSerial = (c.FlexSerial ?? "").Trim();
         if (c.FlexSerial.Length > 40) c.FlexSerial = "";

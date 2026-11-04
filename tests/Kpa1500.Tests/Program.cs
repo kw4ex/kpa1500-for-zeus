@@ -391,5 +391,35 @@ Console.WriteLine("FlexRadio direct source");
     listener.Stop();
 }
 
+Console.WriteLine("Browser page");
+{
+    var plugin = new Kpa1500Plugin();
+    var free = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+    free.Start();
+    var wport = ((System.Net.IPEndPoint)free.LocalEndpoint).Port;
+    free.Stop();
+    await using var web = await WebHost.StartAsync(wport, "9.9.9", plugin.MapEndpoints);
+    using var http = new HttpClient { BaseAddress = new Uri(web.Url) };
+    var page = await http.GetStringAsync("/");
+    Check("browser page served, version filled in", page.Contains("Elecraft KPA1500") && page.Contains("9.9.9") && !page.Contains("{{VERSION}}"));
+    var help = await http.GetStringAsync("/help");
+    Check("help page served", help.Contains("importmap"));
+    var js = await http.GetAsync("/ui/kpa1500.es.js");
+    Check("panel script served", js.IsSuccessStatusCode && (await js.Content.ReadAsStringAsync()).Contains("export default function activate"));
+    var react = await http.GetAsync("/web/react.js");
+    Check("react bundle served", react.IsSuccessStatusCode);
+    var api = await http.GetAsync("/api/status");
+    Check("API answers through the same routes (503 until the feature has started)", (int)api.StatusCode == 503 && (await api.Content.ReadAsStringAsync()).Contains("starting"));
+    var bad = new HttpRequestMessage(HttpMethod.Get, "/");
+    bad.Headers.Host = "evil.example.com";
+    Check("other host names refused (DNS rebinding)", (int)(await http.SendAsync(bad)).StatusCode == 403);
+    var post = new HttpRequestMessage(HttpMethod.Post, "/api/connect");
+    post.Headers.Add("Origin", "http://evil.example.com");
+    Check("changes from another web site refused", (int)(await http.SendAsync(post)).StatusCode == 403);
+    var own = new HttpRequestMessage(HttpMethod.Post, "/api/connect");
+    own.Headers.Add("Origin", "http://127.0.0.1:" + wport);
+    Check("changes from the page itself allowed (reaches the feature)", (int)(await http.SendAsync(own)).StatusCode == 503);
+}
+
 Console.WriteLine($"\n{passed} passed, {failures} failed");
 return failures == 0 ? 0 : 1;
