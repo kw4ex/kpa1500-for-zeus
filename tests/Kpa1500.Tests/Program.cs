@@ -237,6 +237,28 @@ using (var zt = new FakeTci { VfoHz = 14_200_000 })
     Check("amp follows Zeus frequency (7074), not TCI's 14200", await WaitFor(() => amp.Freq == 7074, 5) && ctl.TrackHz.Source == "Zeus");
 }
 
+Console.WriteLine("Radio state re-attached after Zeus replaces it; frequency read without events");
+using (var amp = new FakeAmp())
+{
+    var radioA = new FakeRadio();
+    await using var ctl = new AmpController(NullLogger.Instance, new EventLog(500));
+    ctl.AttachRadio(radioA);
+    ctl.Start(PluginConfig.Sanitize(new PluginConfig { Host = "127.0.0.1", NetPort = amp.Port, PollMs = 50, TciEnabled = false, AutoTuneDetect = false }));
+    Check("amp follows the first radio state (14205)", await WaitFor(() => amp.Freq == 14205, 5));
+    radioA.SetFrequencySilently(21_300_000);
+    ctl.RefreshRadio(radioA);
+    Check("frequency change without an event is picked up (21300)", await WaitFor(() => amp.Freq == 21300, 5));
+    var radioB = new FakeRadio();
+    radioB.SetFrequency(7_074_000);
+    ctl.RefreshRadio(radioB);       // Zeus handed out a new radio-state object
+    Check("amp follows the replaced radio state (7074)", await WaitFor(() => amp.Freq == 7074, 5));
+    radioB.SetFrequency(7_080_000);
+    Check("events from the new radio state are followed (7080)", await WaitFor(() => amp.Freq == 7080, 5));
+    radioA.SetFrequency(14_300_000);
+    await Task.Delay(500);
+    Check("the old radio state is no longer followed", amp.Freq == 7080);
+}
+
 Console.WriteLine("Standby-on-Tune with a Zeus-like TCI (answers only when asked)");
 using (var amp = new FakeAmp())
 using (var zt = new FakeTci())

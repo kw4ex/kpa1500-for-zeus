@@ -27,7 +27,7 @@ public sealed record OnRequest(bool On);
 public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
 {
     /// <summary>Keep identical to plugin.json "version".</summary>
-    public const string ManifestVersion = "1.1.11";
+    public const string ManifestVersion = "1.1.12";
     private const string SettingsKey = "config";
 
     private IPluginContext? _ctx;
@@ -60,19 +60,15 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
         _noAntSave = new Timer(_ => _ = SaveNoAntAsync(), null, Timeout.Infinite, Timeout.Infinite);
         _amp.NoAntenna.LimitsChanged += () => _noAntSave?.Change(TimeSpan.FromSeconds(2), Timeout.InfiniteTimeSpan);
         if (context.Radio is { } radio) _amp.AttachRadio(radio);
-        else
+        else _events.Add("warn", "Zeus radio state is not available yet — band tracking and Standby-on-Tune start when it is.");
+        // Keep checking for as long as the feature runs: some hosts register radio state after
+        // plugins load, or replace it when the radio reconnects, and some do not raise a
+        // frequency event for every change. This re-attaches to a new radio-state object and
+        // picks up a frequency that changed without an event.
+        _radioProbe = new Timer(_ =>
         {
-            _events.Add("warn", "Zeus radio state is not available yet — band tracking and Standby-on-Tune start when it is.");
-            // Some hosts register radio state after plugins load; keep checking.
-            _radioProbe = new Timer(_ =>
-            {
-                if (_ctx?.Radio is { } late && _amp is { RadioAttached: false })
-                {
-                    _amp.AttachRadio(late);
-                    _radioProbe?.Change(Timeout.Infinite, Timeout.Infinite);
-                }
-            }, null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
-        }
+            try { _amp?.RefreshRadio(_ctx?.Radio); } catch { /* never let a timer tick throw */ }
+        }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         _amp.Start(cfg);
         _events.Add("info", $"Elecraft KPA1500 v{ManifestVersion} ready.");
     }

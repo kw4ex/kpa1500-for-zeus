@@ -261,6 +261,31 @@ public sealed class AmpController : IAsyncDisposable
         Note("info", $"Following Zeus radio state ({radio.FrequencyHz / 1000.0:0.0} kHz).");
     }
 
+    /// <summary>
+    /// Called about once a second with whatever radio state Zeus offers right now:
+    /// attaches if none yet, re-attaches if Zeus replaced the object (radio
+    /// reconnected), and re-reads the frequency in case no event was raised.
+    /// </summary>
+    public void RefreshRadio(IRadioStateReader? current)
+    {
+        if (current is null) return;
+        if (_radio is null) { AttachRadio(current); return; }
+        if (!ReferenceEquals(_radio, current))
+        {
+            Note("info", "Zeus replaced its radio state (radio reconnected); following the new one.");
+            DetachRadio();
+            AttachRadio(current);
+            Wake();
+            return;
+        }
+        var hz = current.FrequencyHz;
+        if (hz > 0 && hz != Interlocked.Read(ref _radioHz))
+        {
+            Interlocked.Exchange(ref _radioHz, hz);
+            Wake();
+        }
+    }
+
     public void DetachRadio()
     {
         if (_radio is null) return;
