@@ -201,8 +201,8 @@ public sealed class AmpController : IAsyncDisposable
 
     private void ApplyNoAntConfig(PluginConfig c)
     {
-        // The FlexRadio source gives no receive level (that needs its meter stream), so the check can't run.
-        _noAnt.Enabled = c.NoAntEnabled && c.RadioSource != "flex";
+        // The FlexRadio source itself gives no receive level; with it, the check needs a TCI feed (e.g. the Flex TCI server).
+        _noAnt.Enabled = c.NoAntEnabled && (c.RadioSource != "flex" || c.TciEnabled);
         _noAnt.AutoLearn = c.NoAntAutoLearn;
         _noAnt.BelowFloorDb = c.NoAntBelowFloorDb;
         _noAnt.AboveEquipDb = c.NoAntAboveEquipDb;

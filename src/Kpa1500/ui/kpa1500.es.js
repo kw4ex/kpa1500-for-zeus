@@ -607,7 +607,7 @@ function makePanel(callBackend) {
       const na = status.noAnt || {};
       const bad = na.state === "low" || na.state === "tx";
       const live = na.dbm != null ? na.dbm : tci.lastLevel;
-      const text = cfg.radioSource === "flex" ? "n/a (Flex)" : !cfg.tciEnabled ? "TCI off"
+      const text = !cfg.tciEnabled ? (cfg.radioSource === "flex" ? "n/a (Flex)" : "TCI off")
         : !tci.connected ? "TCI wait"
         : live == null ? "no data" : Math.round(live) + " dBm";
       tiles.push(Tile("RX level", text, bad));
@@ -742,7 +742,7 @@ const HELP = [
       "The Amp freq tile turns amber (\"Amp freq ≠ VFO\") when the amp is more than 10 kHz away from your radio.",
       "Following is on by default. You can switch it off in Settings (Amp follows the VFO).",
       "Nothing is sent while you transmit. It is sent just after you stop."]],
-    ["p", "Using a FlexRadio (for example Zeus Link Flex)? If the amp doesn't follow the VFO, open ⚙ Settings, find Radio, and set \"My radio is\" to \"A FlexRadio\". Leave the choice below it on \"The Flex that Zeus is connected to\" and the panel follows that radio. If you have several radios on the network (Anan, Hermes Lite, Flex 6700, Flex 6300), click \"Choose a different Flex…\" and pick the right one from the list. Everyone else leaves it on \"Any radio\". The panel only listens to the radio and never changes it. The No-antenna check is not available in this mode."],
+    ["p", "Using a FlexRadio (for example Zeus Link Flex)? If the amp doesn't follow the VFO, open ⚙ Settings, find Radio, and set \"My radio is\" to \"A FlexRadio\". Leave the choice below it on \"The Flex that Zeus is connected to\" and the panel follows that radio. If you have several radios on the network (Anan, Hermes Lite, Flex 6700, Flex 6300), click \"Choose a different Flex…\" and pick the right one from the list. Everyone else leaves it on \"Any radio\". The panel only listens to the radio and never changes it. For the receive level and the No-antenna check, also tick Use Zeus TCI in Settings and set its port to the one Zeus shows as Flex TCI (normally 40002)."],
     ["tip", "Number boxes in Settings (ports and so on) change only when you type in them. The mouse wheel and arrow keys do nothing, so you can't change one by accident."],
     ["tip", "If the grey line says \"(TCI says …, ignored)\", Zeus's TCI connection reported a different frequency from the one Zeus shows. The panel uses the one Zeus shows."]]},
 
@@ -1130,10 +1130,10 @@ function Settings(p) {
       h("option", { value: "standby" }, "Warn and keep the amp in STANDBY"))),
     Field("Limit below noise floor (dB)", id("noAntBelowFloorDb"), numIn("noAntBelowFloorDb", 1, 30)),
     Field("Limit above no-antenna noise (dB)", id("noAntAboveEquipDb"), numIn("noAntAboveEquipDb", 1, 30)),
-    draft.radioSource === "flex" ? h("div", { key: "naflex", className: c("muted") },
-      "This check is not available when the radio source is a FlexRadio read directly (it needs a receive level).") :
     draft.tciEnabled ? null : h("div", { key: "natci", className: c("muted") },
-      "This check needs the receive level from Zeus: tick \"Use Zeus TCI\" above and set Zeus's TCI port (Zeus's default is 40001)."),
+      (draft.radioSource === "flex"
+        ? "This check needs a receive level: tick \"Use Zeus TCI\" above and use the port shown as Flex TCI in Zeus's settings (default 40002)."
+        : "This check needs the receive level from Zeus: tick \"Use Zeus TCI\" above and set Zeus's TCI port (Zeus's default is 40001).")),
     h(NoAntBands, { key: "nab", callBackend: p.callBackend, below: draft.noAntBelowFloorDb, above: draft.noAntAboveEquipDb }),
 
     h("div", { className: c("glab") }, "Telemetry shown"),
