@@ -219,6 +219,20 @@ using (var amp = new FakeAmp())
     Check("never keyed: no MOX command exists", !amp.Received.Any(c => c.StartsWith("TX") || c.StartsWith("^TX")));
 }
 
+Console.WriteLine("Receive level that never moves is not a live reading");
+{
+    var t = new DateTime(2026, 10, 29, 4, 0, 0, DateTimeKind.Utc);
+    var m = new NoAntennaMonitor { AutoLearn = false, DeadFeedWindow = TimeSpan.FromSeconds(90) };
+    m.SetBand("20m", t);
+    for (var i = 0; i < 4 * 60; i++) { t = t.AddMilliseconds(250); m.AddLevel(-139, t); }
+    Check("flat -139 for 60 s still judged (not yet 90 s)", m.Snapshot(t).State == NoAntState.Low);
+    for (var i = 0; i < 4 * 60; i++) { t = t.AddMilliseconds(250); m.AddLevel(-139, t); }
+    Check("flat -139 for 2 min → no data, no warning", m.Snapshot(t).State == NoAntState.NoData);
+    t = t.AddMilliseconds(250); m.AddLevel(-120.5, t);
+    t = t.AddMilliseconds(250); m.AddLevel(-139, t);
+    Check("a reading that moves → live again", m.Snapshot(t).State != NoAntState.NoData);
+}
+
 Console.WriteLine("Frequency follows Zeus, not a stale TCI VFO (Zeus Link Flex)");
 using (var amp = new FakeAmp())
 using (var zt = new FakeTci { VfoHz = 14_200_000 })
@@ -237,7 +251,7 @@ using (var zt = new FakeTci { VfoHz = 14_200_000 })
     Check("amp follows Zeus frequency (7074), not TCI's 14200", await WaitFor(() => amp.Freq == 7074, 5) && ctl.TrackHz.Source == "Zeus");
 }
 
-Console.WriteLine("Radio state re-attached after Zeus replaces it; frequency read without events");
+Console.WriteLine("Radio state re-attached after Zeus replaces it; stale stored value ignored");
 using (var amp = new FakeAmp())
 {
     var radioA = new FakeRadio();
@@ -245,9 +259,11 @@ using (var amp = new FakeAmp())
     ctl.AttachRadio(radioA);
     ctl.Start(PluginConfig.Sanitize(new PluginConfig { Host = "127.0.0.1", NetPort = amp.Port, PollMs = 50, TciEnabled = false, AutoTuneDetect = false }));
     Check("amp follows the first radio state (14205)", await WaitFor(() => amp.Freq == 14205, 5));
-    radioA.SetFrequencySilently(21_300_000);
+    radioA.RaiseOnly(21_300_000);   // Zeus Link Flex: event is right, the stored value stays at 14205
+    Check("amp follows the event (21300)", await WaitFor(() => amp.Freq == 21300, 5));
     ctl.RefreshRadio(radioA);
-    Check("frequency change without an event is picked up (21300)", await WaitFor(() => amp.Freq == 21300, 5));
+    await Task.Delay(1500);
+    Check("the stale stored value does not override the event", amp.Freq == 21300);
     var radioB = new FakeRadio();
     radioB.SetFrequency(7_074_000);
     ctl.RefreshRadio(radioB);       // Zeus handed out a new radio-state object

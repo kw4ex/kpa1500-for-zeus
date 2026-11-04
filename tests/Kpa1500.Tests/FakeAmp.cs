@@ -118,7 +118,8 @@ public sealed class FakeRadio : Zeus.Plugins.Contracts.IRadioStateReader
     public event Action<bool> MoxChanged = delegate { };
 
     public void SetFrequency(long hz) { FrequencyHz = hz; FrequencyChanged(hz); }
-    public void SetFrequencySilently(long hz) { FrequencyHz = hz; }   // a host that raises no event
+    public void SetFrequencySilently(long hz) { FrequencyHz = hz; }   // stored value moves, no event
+    public void RaiseOnly(long hz) { FrequencyChanged(hz); }            // event carries the truth, stored value stays stale
     public void SetMode(string m) { Mode = m; ModeChanged(m); }
     public void SetMox(bool on) { Mox = on; MoxChanged(on); }
 }

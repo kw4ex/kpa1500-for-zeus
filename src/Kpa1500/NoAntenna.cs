@@ -80,6 +80,15 @@ public sealed class NoAntennaMonitor
     private bool _tx;
     private double? _judged;   // median the current judgement is based on (kept through TX)
 
+    /// <summary>
+    /// A receive level that is exactly the same for this long is not a live reading (some Zeus
+    /// builds, e.g. with a Flex radio, report a fixed idle value such as -139 dBm). It is then
+    /// treated as "no data" and never raises the warning. Zero switches this off.
+    /// </summary>
+    public TimeSpan DeadFeedWindow { get; set; } = TimeSpan.Zero;
+    private readonly List<(DateTime T, double Dbm)> _flat = new();
+    private bool _dead;
+
     public NoAntennaMonitor() => ResetAll();
 
     /// <summary>Raised (caller's thread) when a band's limit changed, so it can be saved.</summary>
@@ -165,6 +174,15 @@ public sealed class NoAntennaMonitor
         lock (_gate)
         {
             _lastSample = now;
+            if (DeadFeedWindow > TimeSpan.Zero)
+            {
+                _flat.Add((now, dbm));
+                _flat.RemoveAll(s => now - s.T > DeadFeedWindow);
+                var lo = _flat.Min(s => s.Dbm);
+                var hi = _flat.Max(s => s.Dbm);
+                if (hi - lo >= 0.01) _dead = false;
+                else if (now - _flat[0].T >= DeadFeedWindow - TimeSpan.FromSeconds(1) && _flat.Count >= 20) _dead = true;
+            }
             if (_tx || now < _quietUntil || _band is null) return;
             _samples.Add((now, dbm));
             _samples.RemoveAll(s => now - s.T > Window);
@@ -348,7 +366,7 @@ public sealed class NoAntennaMonitor
             var b = _bands[_band];
             NoAntState st;
             if (b.Limit is null) st = NoAntState.NoCheck;
-            else if (!seen || (!_tx && now - _lastSample > Stale)) st = NoAntState.NoData;
+            else if (!seen || _dead || (!_tx && now - _lastSample > Stale)) st = NoAntState.NoData;
             else if (_judged is null) st = NoAntState.Settling;
             else if (_low && _dummy.Contains(_band)) st = NoAntState.Dummy;
             else if (_low) st = _tx ? NoAntState.Tx : NoAntState.Low;

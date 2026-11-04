@@ -200,6 +200,7 @@ public sealed class AmpController : IAsyncDisposable
         _noAnt.AutoLearn = c.NoAntAutoLearn;
         _noAnt.BelowFloorDb = c.NoAntBelowFloorDb;
         _noAnt.AboveEquipDb = c.NoAntAboveEquipDb;
+        _noAnt.DeadFeedWindow = TimeSpan.FromSeconds(90);
     }
 
     private void OnRxLevel(double dbm) => _noAnt.AddLevel(dbm, DateTime.UtcNow);
@@ -263,8 +264,9 @@ public sealed class AmpController : IAsyncDisposable
 
     /// <summary>
     /// Called about once a second with whatever radio state Zeus offers right now:
-    /// attaches if none yet, re-attaches if Zeus replaced the object (radio
-    /// reconnected), and re-reads the frequency in case no event was raised.
+    /// attaches if none yet, and re-attaches if Zeus replaced the object (radio
+    /// reconnected). The frequency itself comes only from Zeus's change events: the
+    /// stored value Zeus offers can be stale (Zeus Link Flex) and must not override them.
     /// </summary>
     public void RefreshRadio(IRadioStateReader? current)
     {
@@ -277,12 +279,6 @@ public sealed class AmpController : IAsyncDisposable
             AttachRadio(current);
             Wake();
             return;
-        }
-        var hz = current.FrequencyHz;
-        if (hz > 0 && hz != Interlocked.Read(ref _radioHz))
-        {
-            Interlocked.Exchange(ref _radioHz, hz);
-            Wake();
         }
     }
 
