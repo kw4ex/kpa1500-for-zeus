@@ -38,7 +38,7 @@
     <EmbeddedResource Include="web/index.html" LogicalName="web/index.html" />
     <EmbeddedResource Include="web/help.html" LogicalName="web/help.html" />
     <EmbeddedResource Include="web/react.js" LogicalName="web/react.js" />
-    <EmbeddedResource Include="ui/kpa1500.es.js" LogicalName="web/ui/kpa1500.es.js" />
+    <EmbeddedResource Include="ui/kpa1500.es.js" WithCulture="false" LogicalName="web/ui/kpa1500.es.js" />
   </ItemGroup>
   <ItemGroup>
     <None Include="plugin.json" CopyToOutputDirectory="PreserveNewest" />
