@@ -60,6 +60,7 @@ public sealed class WebHost : IAsyncDisposable
         mapApi(app.MapGroup("/api"));
 
         app.MapGet("/", ctx => Serve(ctx, "web/index.html", "text/html; charset=utf-8", version));
+        app.MapGet("/favicon.ico", ctx => { ctx.Response.StatusCode = 204; return Task.CompletedTask; });
         app.MapGet("/help", ctx => Serve(ctx, "web/help.html", "text/html; charset=utf-8", version));
         app.MapGet("/web/react.js", ctx => Serve(ctx, "web/react.js", "text/javascript; charset=utf-8", version));
         app.MapGet("/ui/kpa1500.es.js", ctx => Serve(ctx, "web/ui/kpa1500.es.js", "text/javascript; charset=utf-8", version));
