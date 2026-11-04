@@ -3,6 +3,9 @@
 Versions of the KPA1500 feature (`com.kw4ex.zeus.kpa1500`). Newest first.
 No warranty; use at your own risk (see the README).
 
+## 1.4.3
+- Help: "Open in my web browser" now opens your default browser straight to the help page (served by the add-on's browser page), instead of failing inside Zeus. It needs the Browser page turned on (the default).
+
 ## 1.4.2
 - Documentation: the in-panel Help, the browser help page, the PDF guide, the READMEs and this changelog now cover FlexRadio support, the small view, the browser page and network access. No behaviour change.
 

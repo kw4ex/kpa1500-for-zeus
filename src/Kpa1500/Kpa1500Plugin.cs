@@ -27,7 +27,7 @@ public sealed record OnRequest(bool On);
 public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
 {
     /// <summary>Keep identical to plugin.json "version".</summary>
-    public const string ManifestVersion = "1.4.2";
+    public const string ManifestVersion = "1.4.3";
     private const string SettingsKey = "config";
 
     private IPluginContext? _ctx;
@@ -181,6 +181,21 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
             scanStatus = amp.ScanStatus,
             canScan = amp.CanScan,
         };
+    }
+
+    private static bool OpenInBrowser(string url)
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows())
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            else if (OperatingSystem.IsMacOS())
+                System.Diagnostics.Process.Start("open", url);
+            else
+                System.Diagnostics.Process.Start("xdg-open", url);
+            return true;
+        }
+        catch (Exception) { return false; }
     }
 
     private static IResult ToResult(CommandResult r) =>
@@ -355,6 +370,21 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
                 return Results.Ok(new { ok = true, searched, found });
             }
             finally { Interlocked.Exchange(ref _discovering, 0); }
+        });
+
+        // Open the help page in this computer's default web browser (the Zeus window cannot open one itself).
+        // Only the add-on's own loopback address is ever opened, and only for a request from this computer.
+        endpoints.MapPost("open-help", (HttpContext ctx) =>
+        {
+            var from = ctx.Connection.RemoteIpAddress;
+            if (from is not null && !System.Net.IPAddress.IsLoopback(from))
+                return Results.Json(new { ok = false, message = "Only the computer running Zeus can open it." }, statusCode: 403);
+            if (_web is not { Running: true } w)
+                return Results.Json(new { ok = false, message = "Turn on the Browser page in Settings (and Save) first." }, statusCode: 409);
+            var url = w.Url + "help";
+            return OpenInBrowser(url)
+                ? Results.Ok(new { ok = true, message = "Opened " + url, url })
+                : Results.Json(new { ok = false, message = "Could not start your browser. Open " + url + " yourself.", url }, statusCode: 500);
         });
 
         // List the FlexRadios on the network (the operator can pick one in Settings).

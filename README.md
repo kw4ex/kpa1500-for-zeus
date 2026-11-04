@@ -6,7 +6,7 @@ download one file and Zeus installs it.
 
 | Feature | Latest | What it does |
 | --- | --- | --- |
-| **Elecraft KPA1500** | 1.4.2 | Meters and buttons for the KPA1500 amplifier and its ATU; the amp follows the VFO (including a FlexRadio read directly); Standby on Tune; "No antenna?" warning; small view and built-in help; a browser page for this or other computers, tablets and phones; power-on over the network. |
+| **Elecraft KPA1500** | 1.4.3 | Meters and buttons for the KPA1500 amplifier and its ATU; the amp follows the VFO (including a FlexRadio read directly); Standby on Tune; "No antenna?" warning; small view and built-in help; a browser page for this or other computers, tablets and phones; power-on over the network. |
 | **FlexControl Knob** | 1.0.1 | Use the FlexRadio FlexControl USB tuning knob with Zeus: VFO tuning, AF volume, AGC gain and more, every press programmable. |
 
 ## Download

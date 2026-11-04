@@ -669,7 +669,7 @@ function makePanel(callBackend) {
           onRefreshPorts: async () => { try { setPorts((await call(callBackend, "GET", "/ports")) || []); } catch (e) { setPorts([]); } } }));
     }
 
-    if (showHelp) overlay = h(HelpView, { version: status.version, onClose: () => setShowHelp(false) });
+    if (showHelp) overlay = h(HelpView, { version: status.version, callBackend, webPage: !!props.webPage, webStatus: status.web, onClose: () => setShowHelp(false) });
 
     if (view === "mini") {
       const items = new Set(String(cfg.miniItems || "power,status,freq,fwd,swr").split(","));
@@ -706,7 +706,7 @@ function makePanel(callBackend) {
 
 // ── Built-in help (plain language, for operators who are not programmers) ───
 // Blocks: p, ul, ol, tip, warn, dl.  The same data draws the in-panel Help and
-// the stand-alone web page ("Open as a web page").
+// the stand-alone web page ("Open in my web browser").
 const HELP = [
   { title: "Start here", open: true, blocks: [
     ["p", "This panel lets Zeus watch and control your Elecraft KPA1500 amplifier and its built-in tuner (ATU). It shows the amp's meters, gives you buttons for the things you do most, and makes the amp follow your radio's frequency by itself."],
@@ -872,8 +872,18 @@ export function helpPageHtml(version) {
 function HelpView(p) {
   const [note, setNote] = useState(null);
   const page = () => helpPageHtml(p.version);
-  const openPage = () => {
+  const openPage = async () => {
     setNote(null);
+    // On the browser page itself, just open the help page. Inside Zeus, ask the add-on to open
+    // the computer's default browser (Zeus's own window cannot open one).
+    if (p.webPage) { window.open("/help", "_blank"); return; }
+    try {
+      const r = await call(p.callBackend, "POST", "/open-help");
+      if (r && r.ok) { setNote("Opened in your web browser."); return; }
+    } catch (e) {
+      setNote((e && e.message) || "Could not open your web browser.");
+      return;
+    }
     try {
       const url = URL.createObjectURL(new Blob([page()], { type: "text/html" }));
       const w = window.open(url, "_blank");
