@@ -114,6 +114,7 @@ public sealed class PluginConfig
     // ── browser page (this computer only) ──
     public bool WebEnabled { get; set; } = true;
     public int WebPort { get; set; } = 8081;
+    public bool WebRequirePassword { get; set; } = true; // network visitors sign in (recommended)
     public bool WebLan { get; set; }                     // also other computers/phones on the network (password needed)
     public string WebPassword { get; set; } = "";        // write-only: a NEW password; never stored or sent back
 

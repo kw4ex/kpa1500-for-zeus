@@ -465,5 +465,26 @@ Console.WriteLine("Browser page on the network (password)");
     }
 }
 
+Console.WriteLine("Browser page on the network, password turned off");
+{
+    var plugin = new Kpa1500Plugin();
+    var free = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+    free.Start();
+    var wport = ((System.Net.IPEndPoint)free.LocalEndpoint).Port;
+    free.Stop();
+    var lanIp = NetTools.LocalIPv4().Select(a => a.Address).FirstOrDefault();
+    await using var web = await WebHost.StartAsync(wport, true, null, "9.9.9", plugin.MapEndpoints);
+    Check("no-password mode is reported", web.Lan && !web.PasswordRequired);
+    if (lanIp is not null)
+    {
+        using var net = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }) { BaseAddress = new Uri($"http://{lanIp}:{wport}/") };
+        Check("a network visitor gets the page without signing in", (int)(await net.GetAsync("/")).StatusCode == 200);
+        Check("a network visitor reaches the feature without signing in", (int)(await net.GetAsync("/api/status")).StatusCode == 503);
+        var post = new HttpRequestMessage(HttpMethod.Post, "/api/connect");
+        post.Headers.Add("Origin", "http://evil.example.com");
+        Check("other web sites still cannot press buttons", (int)(await net.SendAsync(post)).StatusCode == 403);
+    }
+}
+
 Console.WriteLine($"\n{passed} passed, {failures} failed");
 return failures == 0 ? 0 : 1;

@@ -27,7 +27,7 @@ public sealed record OnRequest(bool On);
 public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
 {
     /// <summary>Keep identical to plugin.json "version".</summary>
-    public const string ManifestVersion = "1.4.0";
+    public const string ManifestVersion = "1.4.1";
     private const string SettingsKey = "config";
 
     private IPluginContext? _ctx;
@@ -91,19 +91,20 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
         try
         {
             if (wait > TimeSpan.Zero) await Task.Delay(wait).ConfigureAwait(false);
-            var lan = cfg.WebLan && _webAuth is not null;
-            if (_web is { } cur && cfg.WebEnabled && cur.Port == cfg.WebPort && cur.Lan == lan) return;
+            var needPw = cfg.WebRequirePassword;
+            var lan = cfg.WebLan && (!needPw || _webAuth is not null);
+            if (_web is { } cur && cfg.WebEnabled && cur.Port == cfg.WebPort && cur.Lan == lan && (!lan || cur.PasswordRequired == needPw)) return;
             if (_web is not null)
             {
                 await _web.DisposeAsync().ConfigureAwait(false);
                 _web = null;
             }
-            _webError = cfg.WebLan && _webAuth is null ? "Choose a password to allow other devices; only this computer can connect for now." : "";
+            _webError = cfg.WebLan && needPw && _webAuth is null ? "Choose a password to allow other devices; only this computer can connect for now." : "";
             if (!cfg.WebEnabled) return;
             try
             {
-                _web = await WebHost.StartAsync(cfg.WebPort, lan, lan ? VerifyWebPassword : null, ManifestVersion, MapEndpoints).ConfigureAwait(false);
-                _events.Add("info", $"Browser page ready: {_web.Url}" + (lan ? " (and on the network, password protected)" : ""));
+                _web = await WebHost.StartAsync(cfg.WebPort, lan, lan && needPw ? VerifyWebPassword : null, ManifestVersion, MapEndpoints).ConfigureAwait(false);
+                _events.Add("info", $"Browser page ready: {_web.Url}" + (lan ? (needPw ? " (and on the network, password protected)" : " (and on the network, NO password)") : ""));
             }
             catch (Exception ex)
             {
@@ -263,7 +264,7 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
                 web = new
                 {
                     enabled = amp.Config.WebEnabled, running = _web?.Running ?? false, url = _web?.Url, error = _webError,
-                    lan = _web?.Lan ?? false, passwordSet = _webAuth is not null,
+                    lan = _web?.Lan ?? false, passwordSet = _webAuth is not null, passwordRequired = amp.Config.WebRequirePassword,
                     lanUrls = _web is { Lan: true } w ? NetTools.LocalIPv4().Select(a => $"http://{a.Address}:{w.Port}/").ToArray() : Array.Empty<string>(),
                 },
                 tx = amp.Transmitting,
@@ -292,7 +293,7 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
             var newPw = body.WebPassword ?? "";
             if (newPw != "" && (newPw.Length is < 8 or > 100))
                 return Results.Json(new { ok = false, message = "The browser-page password must be 8 to 100 characters." }, statusCode: 400);
-            if (body.WebLan && newPw == "" && _webAuth is null)
+            if (body.WebLan && body.WebRequirePassword && newPw == "" && _webAuth is null)
                 return Results.Json(new { ok = false, message = "Choose a browser-page password before allowing other devices." }, statusCode: 400);
             // Keep a MAC the feature learned if the panel's copy predates it.
             if (string.IsNullOrWhiteSpace(body.AmpMac)) body.AmpMac = amp.Config.AmpMac;

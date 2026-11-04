@@ -780,7 +780,7 @@ const HELP = [
       "Everything works the same as in Zeus: watch the meters, press the buttons, change Settings.",
       "Only this computer can open it, unless you allow other devices (below).",
       "To turn it off or change the port number, open Settings in the panel and look under Browser page, then click Save. If 8081 is in use by another program, pick another number such as 8082."]],
-    ["p", "To use it from another computer, a tablet or a phone on your home network: in Settings under Browser page tick \"Also allow other computers, tablets and phones on my network\", type a password (8 or more characters), and click Save. The line under it lists the addresses, such as http://192.168.1.20:8081/ . Type one into the other device's browser and sign in with the password. Your computer may ask once whether to allow incoming connections: allow it."],
+    ["p", "To use it from another computer, a tablet or a phone on your home network: in Settings under Browser page tick \"Also allow other computers, tablets and phones on my network\", leave \"Ask for a password\" ticked and type a password (8 or more characters), and click Save. If you untick \"Ask for a password\", anyone on the network can use the page with no sign-in. The line under it lists the addresses, such as http://192.168.1.20:8081/ . Type one into the other device's browser and sign in with the password. Your computer may ask once whether to allow incoming connections: allow it."],
     ["warn", "The page is not encrypted. Anyone on your network who learns the password can control the amp, so use a password you use nowhere else, and do not use this on a shared or public network. To stop all access from other devices, untick the box and Save."],
     ["tip", "Zeus must be running with the KPA1500 feature loaded. If the page does not open, check the Browser page line in Settings."]]},
   { title: "A safe first test", blocks: [
@@ -1112,18 +1112,21 @@ function Settings(p) {
     h("div", { className: c("glab") }, "Browser page"),
     h("div", { className: c("checks") }, Check(draft, setDraft, "webEnabled", "Also show this panel on a web page (this computer only)")),
     draft.webEnabled ? Field("Web page port", id("webPort"), numIn("webPort", 1024, 65535)) : null,
-    draft.webEnabled ? h("div", { className: c("checks") }, Check(draft, setDraft, "webLan", "Also allow other computers, tablets and phones on my network (password needed)")) : null,
+    draft.webEnabled ? h("div", { className: c("checks") }, Check(draft, setDraft, "webLan", "Allow other computers, tablets and phones on my network (default: No)")) : null,
     draft.webEnabled && draft.webLan ? [
-      Field("Password", id("webPassword"), h("input", { id: id("webPassword"), className: c("in"), type: "password", autoComplete: "new-password",
+      h("div", { key: "webreq", className: c("checks") }, Check(draft, setDraft, "webRequirePassword", "Ask for a password (recommended)")),
+      draft.webRequirePassword ? Field("Password", id("webPassword"), h("input", { id: id("webPassword"), className: c("in"), type: "password", autoComplete: "new-password",
         value: draft.webPassword || "", placeholder: p.webStatus && p.webStatus.passwordSet ? "leave empty to keep the current password" : "choose one, 8 or more characters",
-        onChange: (e) => set("webPassword", e.target.value) })),
-      h("div", { key: "weblannote", className: c("muted") }, "Other devices open this computer's address (shown below after Save) and sign in with this password. The page is not encrypted, so use it only on a network you trust, such as your home network. Your computer may ask once whether to allow incoming connections: allow it."),
+        onChange: (e) => set("webPassword", e.target.value) })) : null,
+      draft.webRequirePassword
+        ? h("div", { key: "weblannote", className: c("muted") }, "Other devices open this computer's address (shown below after Save) and sign in with this password. The page is not encrypted, so use it only on a network you trust, such as your home network. Your computer may ask once whether to allow incoming connections: allow it.")
+        : h("div", { key: "weblannote", className: c("err") }, "No password: anyone on your network can see and control the amp, including the power, operate and ATU buttons. Only use this on a network where you trust every device."),
     ] : null,
     h("div", { key: "webst", className: c(p.webStatus && p.webStatus.error ? "err" : "muted"), role: "status" },
       !draft.webEnabled ? "Off."
         : !p.webStatus ? "Not started yet — click Save."
         : p.webStatus.running ? "Open " + p.webStatus.url + " in a web browser on this computer (for help: " + p.webStatus.url + "help)." +
-            (p.webStatus.lan ? " On the network, use one of: " + (p.webStatus.lanUrls || []).join("  ") : " Only this computer can reach it.")
+            (p.webStatus.lan ? " On the network" + (p.webStatus.passwordRequired ? " (with the password)" : " (no password)") + ", use one of: " + (p.webStatus.lanUrls || []).join("  ") : " Only this computer can reach it.")
         : p.webStatus.error ? "Could not start: " + p.webStatus.error + " Try another port number."
         : "Starting… Click Save if you just changed it."),
 

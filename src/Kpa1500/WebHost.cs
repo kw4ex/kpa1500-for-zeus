@@ -8,7 +8,8 @@
 // Who can reach it:
 //   * Always: this computer, at http://127.0.0.1:<port>/ (no password).
 //   * Only if the operator turns it on: other computers, tablets and phones on
-//     the network. They must sign in with a password first.
+//     the network. By default they must sign in with a password first; the
+//     operator may choose to ask for none.
 //
 // Safety: requests from this computer must name 127.0.0.1/localhost in their Host
 // header (stops DNS-rebinding), and a request that changes anything must come from
@@ -69,6 +70,8 @@ public sealed class WebHost : IAsyncDisposable
     public int Port { get; private set; }
     /// <summary>True when other devices on the network may connect (they must log in).</summary>
     public bool Lan { get; private set; }
+    /// <summary>Network visitors must sign in (false = anyone on the network may use it).</summary>
+    public bool PasswordRequired => _verify is not null;
     public string Url => $"http://127.0.0.1:{Port}/";
     public bool Running => _app is not null;
 
@@ -76,11 +79,11 @@ public sealed class WebHost : IAsyncDisposable
     public void ClearSessions() => _sessions.Clear();
 
     /// <summary>Starts the server; throws (e.g. port in use) so the caller can say why.</summary>
-    /// <param name="lan">Also listen on the network. Needs <paramref name="verifyPassword"/>.</param>
+    /// <param name="lan">Also listen on the network.</param>
+    /// <param name="verifyPassword">Network visitors must sign in with a password this accepts; null = no password asked (open to the whole network).</param>
     public static async Task<WebHost> StartAsync(int port, bool lan, Func<string, bool>? verifyPassword, string version,
         Action<IEndpointRouteBuilder> mapApi, CancellationToken ct = default)
     {
-        if (lan && verifyPassword is null) throw new ArgumentException("A password is needed to allow the network.", nameof(verifyPassword));
         var host = new WebHost { Port = port, Lan = lan, _verify = verifyPassword };
 
         var b = WebApplication.CreateSlimBuilder(new WebApplicationOptions { ContentRootPath = AppContext.BaseDirectory });
@@ -112,7 +115,7 @@ public sealed class WebHost : IAsyncDisposable
             ctx.Response.Headers["Cache-Control"] = "no-store";
 
             // Visitors from the network must have signed in. This computer needs no password.
-            if (!local && path != "/login" && path != "/favicon.ico" && !host.SignedIn(ctx))
+            if (!local && host._verify is not null && path != "/login" && path != "/favicon.ico" && !host.SignedIn(ctx))
             {
                 if (path.StartsWith("/api/", StringComparison.Ordinal))
                 {
