@@ -27,7 +27,7 @@ public sealed record OnRequest(bool On);
 public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
 {
     /// <summary>Keep identical to plugin.json "version".</summary>
-    public const string ManifestVersion = "1.1.13";
+    public const string ManifestVersion = "1.2.0";
     private const string SettingsKey = "config";
 
     private IPluginContext? _ctx;
@@ -208,6 +208,12 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
                     mode = amp.RadioMode,
                     mox = amp.RadioMox,
                 },
+                flex = amp.Flex is not { } fx ? null : new
+                {
+                    connected = fx.Connected, error = fx.LastError, notice = fx.Notice, target = fx.Target,
+                    hz = fx.Hz, mode = fx.Mode, tx = fx.Tx, tune = fx.Tune,
+                    radio = fx.Radio is { } r ? new { r.Model, r.Nickname, r.Serial, r.Ip, r.Port } : null,
+                },
                 tx = amp.Transmitting,
                 pendingBand = amp.PendingBand >= 0 ? KpaProtocol.BandName(amp.PendingBand) : null,
                 noAnt = NoAntJson(amp),
@@ -282,6 +288,25 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
                 return Results.Ok(new { ok = true, searched, found });
             }
             finally { Interlocked.Exchange(ref _discovering, 0); }
+        });
+
+        // List the FlexRadios on the network (the operator can pick one in Settings).
+        endpoints.MapPost("flex/discover", async (CancellationToken ct) =>
+        {
+            try
+            {
+                var found = await FlexDiscovery.ListenAsync(TimeSpan.FromSeconds(3.5), ct).ConfigureAwait(false);
+                var mine = FlexClient.ConnectedTo(found);
+                return Results.Ok(new
+                {
+                    ok = true,
+                    found = found.Select(f => new { f.Model, f.Nickname, f.Serial, f.Ip, f.Port, f.Status, f.Version, zeus = mine?.Serial == f.Serial }),
+                });
+            }
+            catch (System.Net.Sockets.SocketException e)
+            {
+                return Results.Ok(new { ok = false, found = Array.Empty<object>(), message = "Can't listen for FlexRadios (" + e.SocketErrorCode + "). Type the radio's address instead." });
+            }
         });
 
         // ── "No antenna?" check ──

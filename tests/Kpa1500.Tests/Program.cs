@@ -333,5 +333,63 @@ Console.WriteLine("TCI parsing");
     Check("Thetis rx_channel_sensors_ex average preferred", levels.SequenceEqual(new[] { -110.5 }));
 }
 
+Console.WriteLine("FlexRadio direct source");
+{
+    var disc = "discovery_protocol_version=3.0.0.2 model=FLEX-6300 serial=3915-5805-6300-6839 version=3.5.9 nickname=Shack\u007f6300 ip=192.168.1.50 port=4992 status=Available";
+    var pkt = new byte[28].Concat(System.Text.Encoding.ASCII.GetBytes(disc)).Concat(new byte[4]).ToArray();
+    var info = FlexProtocol.ParseDiscovery(pkt, pkt.Length);
+    Check("Flex discovery parsed", info is { Model: "FLEX-6300", Serial: "3915-5805-6300-6839", Ip: "192.168.1.50", Port: 4992, Nickname: "Shack 6300" });
+    Check("Flex discovery ignores junk", FlexProtocol.ParseDiscovery(new byte[40], 40) is null);
+    Check("MHz to Hz", FlexProtocol.MHzToHz("14.200000") == 14_200_000 && FlexProtocol.MHzToHz("x") == 0);
+
+    await using (var fc = new FlexClient("", "127.0.0.1", 1, (_, _) => { }, autoStart: false))
+    {
+        fc.HandleLine("S1|slice 0 in_use=1 RF_frequency=7.074000 mode=USB tx=0 active=0");
+        fc.HandleLine("S1|slice 1 in_use=1 RF_frequency=14.250000 mode=USB tx=1 active=1");
+        Check("Flex follows the transmit slice (needs connection for tx flags only)", fc.Hz == 14_250_000 && fc.Mode == "USB");
+        fc.HandleLine("S1|slice 1 tx=0");
+        fc.HandleLine("S1|slice 0 active=1");
+        Check("Flex falls back to the active slice", fc.Hz == 7_074_000);
+        fc.HandleLine("S1|slice 0 in_use=0");
+        Check("Flex ignores a closed slice", fc.Hz == 14_250_000);
+        Check("Flex tx flags need a connection", !fc.Tx);
+    }
+
+    // Controller follows a (fake) FlexRadio, not Zeus's stale frequency.
+    var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+    listener.Start();
+    var fport = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+    System.Net.Sockets.NetworkStream? fs = null;
+    var server = Task.Run(async () =>
+    {
+        using var cl = await listener.AcceptTcpClientAsync();
+        fs = cl.GetStream();
+        async Task Say(string t) { var b = System.Text.Encoding.ASCII.GetBytes(t + "\n"); await fs.WriteAsync(b); }
+        await Say("V3.5.9.0"); await Say("H12345678");
+        await Say("S12345678|slice 0 in_use=1 RF_frequency=18.100000 mode=USB tx=1 active=1");
+        var buf = new byte[1024];
+        try { while (await fs.ReadAsync(buf) > 0) { } } catch { }
+    });
+    using var amp = new FakeAmp();
+    var radio = new FakeRadio();
+    radio.SetFrequency(14_200_000);
+    await using var ctl = new AmpController(NullLogger.Instance, new EventLog(500));
+    ctl.AttachRadio(radio);
+    ctl.Start(PluginConfig.Sanitize(new PluginConfig
+    {
+        Host = "127.0.0.1", NetPort = amp.Port, PollMs = 50,
+        RadioSource = "flex", FlexHost = "127.0.0.1", FlexPort = fport, StandbyOnTune = true,
+    }));
+    Check("Flex connected", await WaitFor(() => ctl.Flex is { Connected: true }, 8));
+    Check("amp follows the Flex (18100), not Zeus's 14200", await WaitFor(() => amp.Freq == 18100, 5) && ctl.TrackHz.Source == "FlexRadio");
+    Check("Flex source does not force TCI on", !ctl.Config.TciEnabled);
+    var line = System.Text.Encoding.ASCII.GetBytes("S12345678|transmit tune=1\n");
+    await fs!.WriteAsync(line);
+    Check("Flex TUNE seen as transmitting", await WaitFor(() => ctl.Transmitting, 4));
+    await fs.WriteAsync(System.Text.Encoding.ASCII.GetBytes("S12345678|transmit tune=0\n"));
+    Check("Flex TUNE ends", await WaitFor(() => !ctl.Transmitting, 4));
+    listener.Stop();
+}
+
 Console.WriteLine($"\n{passed} passed, {failures} failed");
 return failures == 0 ? 0 : 1;

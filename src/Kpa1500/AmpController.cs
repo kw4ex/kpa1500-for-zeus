@@ -107,6 +107,7 @@ public sealed class AmpController : IAsyncDisposable
     private CancellationTokenSource? _cts;
     private Task? _loop;
     private TciClient? _tci;
+    private FlexClient? _flex;
 
     // Radio state (written from Zeus event threads, read on the poll thread).
     private IRadioStateReader? _radio;
@@ -164,6 +165,7 @@ public sealed class AmpController : IAsyncDisposable
             _state.Mac = cfg.AmpMac == "" ? null : cfg.AmpMac;
         }
         RestartTci(cfg);
+        RestartFlex(cfg);
         _cts = new CancellationTokenSource();
         _loop = Task.Run(() => LoopAsync(_cts.Token));
     }
@@ -172,7 +174,7 @@ public sealed class AmpController : IAsyncDisposable
 
     public void ApplyConfig(PluginConfig next)
     {
-        bool reopen, tciChanged;
+        bool reopen, tciChanged, flexChanged;
         lock (_gate)
         {
             reopen = next.Transport != _cfg.Transport || next.Host != _cfg.Host ||
@@ -180,6 +182,8 @@ public sealed class AmpController : IAsyncDisposable
                      next.Baud != _cfg.Baud;
             tciChanged = next.TciEnabled != _cfg.TciEnabled || next.TciHost != _cfg.TciHost ||
                          next.TciPort != _cfg.TciPort || next.TciReceiver != _cfg.TciReceiver;
+            flexChanged = next.RadioSource != _cfg.RadioSource || next.FlexSerial != _cfg.FlexSerial ||
+                          next.FlexHost != _cfg.FlexHost || next.FlexPort != _cfg.FlexPort;
             _cfg = next;
             ApplyNoAntConfig(next);
             if (next.AmpMac != "") _state.Mac = next.AmpMac;
@@ -191,12 +195,14 @@ public sealed class AmpController : IAsyncDisposable
         }
         if (reopen) _ = DropLinkAsync("connection settings changed");
         if (tciChanged) RestartTci(next);
+        if (flexChanged) RestartFlex(next);
         Wake();
     }
 
     private void ApplyNoAntConfig(PluginConfig c)
     {
-        _noAnt.Enabled = c.NoAntEnabled;
+        // The FlexRadio source gives no receive level (that needs its meter stream), so the check can't run.
+        _noAnt.Enabled = c.NoAntEnabled && c.RadioSource != "flex";
         _noAnt.AutoLearn = c.NoAntAutoLearn;
         _noAnt.BelowFloorDb = c.NoAntBelowFloorDb;
         _noAnt.AboveEquipDb = c.NoAntAboveEquipDb;
@@ -221,6 +227,23 @@ public sealed class AmpController : IAsyncDisposable
         _tci = t;
     }
 
+    private void RestartFlex(PluginConfig cfg)
+    {
+        var old = Interlocked.Exchange(ref _flex, null);
+        if (old is not null)
+        {
+            old.Changed -= Wake;
+            _ = old.DisposeAsync().AsTask();
+        }
+        if (cfg.RadioSource != "flex") return;
+        var f = new FlexClient(cfg.FlexSerial, cfg.FlexHost, cfg.FlexPort, Note);
+        f.Changed += Wake;
+        _flex = f;
+    }
+
+    /// <summary>The FlexRadio listener (null unless the radio source is "flex").</summary>
+    public FlexClient? Flex => _flex;
+
     private static bool HasTarget(PluginConfig c) =>
         c.Transport == "serial" ? !string.IsNullOrWhiteSpace(c.SerialPort) : !string.IsNullOrWhiteSpace(c.Host);
 
@@ -241,6 +264,8 @@ public sealed class AmpController : IAsyncDisposable
         }
         var tci = Interlocked.Exchange(ref _tci, null);
         if (tci is not null) await tci.DisposeAsync().ConfigureAwait(false);
+        var flex = Interlocked.Exchange(ref _flex, null);
+        if (flex is not null) await flex.DisposeAsync().ConfigureAwait(false);
         await DropLinkAsync(null).ConfigureAwait(false);
         _cts?.Dispose();
     }
@@ -297,7 +322,7 @@ public sealed class AmpController : IAsyncDisposable
         _radioMox = tx;
         // Zeus reports TUNE and MOX alike here; ask TCI which one it is.
         _tci?.QueryTxState();
-        if (tx && _cfg.StandbyOnTune && !(_tci?.Connected ?? false) && DateTime.UtcNow - _noTciWarnAt > TimeSpan.FromMinutes(5))
+        if (tx && _cfg.StandbyOnTune && _flex is null && !(_tci?.Connected ?? false) && DateTime.UtcNow - _noTciWarnAt > TimeSpan.FromMinutes(5))
         {
             _noTciWarnAt = DateTime.UtcNow;
             Note("warn", "TUNE STBY is on, but Zeus TCI isn't connected, so a TUNE can't be told apart from talking. " +
@@ -319,7 +344,7 @@ public sealed class AmpController : IAsyncDisposable
     public AmpState State { get { lock (_gate) return _state.Copy(); } }
     public long RadioHz => Interlocked.Read(ref _radioHz);
     public bool RadioMox => _radioMox;
-    public string RadioMode => _radioMode;
+    public string RadioMode => _flex is { Mode: { Length: > 0 } fm } ? fm : _radioMode;
     public int PendingBand => _bandPending;
     public (bool Enabled, bool Connected, bool Tune, string Target, string Error, long Levels, double? LastLevel, int? LevelChannel, long PowerReports) Tci
     {
@@ -343,7 +368,7 @@ public sealed class AmpController : IAsyncDisposable
     }
 
     // Zeus's TCI "trx" covers MOX only; its TUNE carrier shows up as "tune".
-    private bool TxLocked() => _radioMox || ((_tci?.Trx ?? false) && (_radio is null || _radioMox)) || TciTune || (_state.ForwardW ?? 0) >= RfPresentWatts;
+    private bool TxLocked() => _radioMox || ((_tci?.Trx ?? false) && (_radio is null || _radioMox)) || TciTune || (_flex?.Tx ?? false) || (_state.ForwardW ?? 0) >= RfPresentWatts;
 
     // Zeus's TCI answers "tune" only when asked and never says when it ends, so a
     // TCI "tune: true" counts only while Zeus itself still reports transmitting
@@ -363,6 +388,7 @@ public sealed class AmpController : IAsyncDisposable
 
     private bool TuneSignal(PluginConfig cfg) =>
         (cfg.TciEnabled && TciTune) ||
+        (cfg.RadioSource == "flex" && (_flex?.Tune ?? false)) ||
         (cfg.AutoTuneDetect && TuneGuard.IsTuneMode(_radioMode));
 
     // ── poll loop ───────────────────────────────────────────────────────────
@@ -644,6 +670,8 @@ public sealed class AmpController : IAsyncDisposable
     {
         get
         {
+            // FlexRadio source: Zeus's own state is not trusted, the radio is read directly.
+            if (_flex is { } fx) return fx.Hz > 0 ? (fx.Hz, "FlexRadio") : (0, "");
             var tci = _tci;
             var tciHz = tci?.TxHz ?? 0;
             if (tci is not null && tci.Split && tciHz > 0) return (tciHz, "TCI VFO B (split)");

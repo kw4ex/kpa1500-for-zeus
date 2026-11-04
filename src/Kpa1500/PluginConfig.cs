@@ -105,6 +105,12 @@ public sealed class PluginConfig
         return string.Join(',', list);
     }
 
+    // ── radio source: "zeus" = what Zeus reports; "flex" = read a FlexRadio directly ──
+    public string RadioSource { get; set; } = "zeus";
+    public string FlexSerial { get; set; } = "";         // the chosen FlexRadio ("" = the only one found)
+    public string FlexHost { get; set; } = "";           // optional fixed address (else found by serial)
+    public int FlexPort { get; set; } = 4992;
+
     // ── display ──
     public bool Compact { get; set; }
     public string TempUnit { get; set; } = "C";          // "C" | "F"
@@ -150,6 +156,10 @@ public sealed class PluginConfig
         if (NoAntAction is not ("warn" or "standby")) e.Add("No-antenna action must be warn or standby.");
         if (NoAntBelowFloorDb is < 1 or > 30) e.Add("Margin below the noise floor must be 1–30 dB.");
         if (NoAntAboveEquipDb is < 1 or > 30) e.Add("Margin above equipment noise must be 1–30 dB.");
+        if (RadioSource is not ("zeus" or "flex")) e.Add("Radio source must be zeus or flex.");
+        if ((FlexSerial ?? "").Length > 40) e.Add("FlexRadio serial is too long.");
+        if ((FlexHost ?? "").Length > 253) e.Add("FlexRadio address is too long.");
+        if (FlexPort is < 1 or > 65535) e.Add("FlexRadio port must be 1–65535.");
         if (TempUnit is not ("C" or "F")) e.Add("Temperature unit must be C or F.");
         if (MeterMaxWatts is < 100 or > 3000) e.Add("Meter full scale must be 100–3000 W.");
         if (double.IsNaN(SwrWarn) || SwrWarn is < 1.1 or > 10) e.Add("SWR warning must be 1.1–10.");
@@ -185,11 +195,17 @@ public sealed class PluginConfig
         c.MeterMaxWatts = Math.Clamp(c.MeterMaxWatts, 100, 3000);
         c.SwrWarn = double.IsNaN(c.SwrWarn) ? d.SwrWarn : Math.Clamp(c.SwrWarn, 1.1, 10);
         c.TempWarnC = Math.Clamp(c.TempWarnC, 30, 100);
+        if (c.RadioSource is not ("zeus" or "flex")) c.RadioSource = d.RadioSource;
+        c.FlexSerial = (c.FlexSerial ?? "").Trim();
+        if (c.FlexSerial.Length > 40) c.FlexSerial = "";
+        c.FlexHost = (c.FlexHost ?? "").Trim();
+        if (c.FlexHost.Length > 253) c.FlexHost = "";
+        if (c.FlexPort is < 1 or > 65535) c.FlexPort = d.FlexPort;
         c.ControlOrder = NormalizeControlOrder(c.ControlOrder);
         c.MiniItems = NormalizeMiniItems(c.MiniItems);
         // Zeus only says a transmission is TUNE (not talk) over TCI, so
         // Standby-on-Tune always needs it.
-        if (c.StandbyOnTune) c.TciEnabled = true;
+        if (c.StandbyOnTune && c.RadioSource != "flex") c.TciEnabled = true;
         return c;
     }
 }

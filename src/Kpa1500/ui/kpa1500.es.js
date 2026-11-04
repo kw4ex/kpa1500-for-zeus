@@ -410,12 +410,12 @@ function makePanel(callBackend) {
         onClick: () => act("/operate", { operate: !operating }) })],
       // On/off switch, like the Thetis bridge: lit = whenever TUNE is pressed in
       // Zeus the amp goes to STANDBY, and back to OPERATE when TUNE ends.
-      tunestby: (f) => (f || cfg.ctlTuneGuard) && [toggle("tg", sotOn && !(tci.enabled && tci.connected) ? "TUNE STBY ⚠" : "TUNE STBY", sotOn, {
+      tunestby: (f) => (f || cfg.ctlTuneGuard) && [toggle("tg", sotOn && !(status.flex ? status.flex.connected : (tci.enabled && tci.connected)) ? "TUNE STBY ⚠" : "TUNE STBY", sotOn, {
         disabled: busy,   // lit blue like OPERATE when on
         title: (sotOn
           ? "Standby on Tune is ON: pressing TUNE in Zeus puts the amp in STANDBY, and OPERATE returns afterwards. Click to turn it off."
           : "Standby on Tune is OFF. Click to turn it on.") +
-          (sotOn && !(tci.enabled && tci.connected) ? " ⚠ Not working yet: Zeus TCI isn't connected (" + (tci.error || "turn TCI on in Zeus, port 40001") + ")." : ""),
+          (sotOn && !(status.flex ? status.flex.connected : (tci.enabled && tci.connected)) ? (status.flex ? " ⚠ Not working yet: the FlexRadio isn't connected." : " ⚠ Not working yet: Zeus TCI isn't connected (" + (tci.error || "turn TCI on in Zeus, port 40001") + ").") : ""),
         onClick: async () => {
           await act("/tune-guard/enable", { on: !sotOn });
           try { const x = await call(callBackend, "GET", "/config"); if (x) setCfgSaved(x); } catch (e) { /* keep */ }
@@ -438,7 +438,10 @@ function makePanel(callBackend) {
         onClick: () => tuning ? act("/atu/cancel") : setConfirm("tune") })],
       band: () => {
         if (!cfg.ctlBand) return null;
-        const radioText = status.radio && status.radio.available && status.radio.band
+        const fx = status.flex;
+        const radioText = fx && !(status.radio && status.radio.band)
+          ? "FlexRadio: " + (fx.connected ? "connected, waiting for a frequency…" : (fx.error || fx.notice || "looking for the radio…"))
+          : status.radio && status.radio.available && status.radio.band
           ? (status.radio.source || "Zeus") + ": " + status.radio.band + " · " + (status.radio.frequencyHz / 1000).toFixed(1) + " kHz"
             + (status.radio.tciHz && Math.abs(status.radio.tciHz - status.radio.frequencyHz) > 2000
                 ? " (TCI says " + (status.radio.tciHz / 1000).toFixed(1) + ", ignored)" : "")
@@ -604,7 +607,7 @@ function makePanel(callBackend) {
       const na = status.noAnt || {};
       const bad = na.state === "low" || na.state === "tx";
       const live = na.dbm != null ? na.dbm : tci.lastLevel;
-      const text = !cfg.tciEnabled ? "TCI off"
+      const text = cfg.radioSource === "flex" ? "n/a (Flex)" : !cfg.tciEnabled ? "TCI off"
         : !tci.connected ? "TCI wait"
         : live == null ? "no data" : Math.round(live) + " dBm";
       tiles.push(Tile("RX level", text, bad));
@@ -654,7 +657,7 @@ function makePanel(callBackend) {
             h("button", { type: "button", className: c("b"), onClick: () => setConfirm(null) }, "Cancel"))));
     } else if (showSettings && draft) {
       overlay = h("div", { className: c("overlay"), style: { alignItems: "flex-start", overflow: "auto" } },
-        Settings({ draft, setDraft, ports, saveErr, connected, busy, found, mac: amp.mac, callBackend, tciStatus: tci,
+        Settings({ draft, setDraft, ports, saveErr, connected, busy, found, mac: amp.mac, callBackend, tciStatus: tci, flexStatus: status.flex,
           onFind: async () => {
             setFound({ searching: true });
             try { setFound(await call(callBackend, "POST", "/discover")); }
@@ -739,6 +742,7 @@ const HELP = [
       "The Amp freq tile turns amber (\"Amp freq ≠ VFO\") when the amp is more than 10 kHz away from your radio.",
       "Following is on by default. You can switch it off in Settings (Amp follows the VFO).",
       "Nothing is sent while you transmit. It is sent just after you stop."]],
+    ["p", "Using a FlexRadio (for example Zeus Link Flex)? If the amp doesn't follow the VFO, open ⚙ Settings, find Radio, and choose \"Read a FlexRadio directly\". Leave it on Automatic and the panel follows the Flex that Zeus is already connected to. If you have several radios on the network (Anan, Hermes Lite, Flex 6700, Flex 6300), click Find radios and pick the right Flex from the list. The panel only listens to the radio and never changes it. The No-antenna check is not available in this mode."],
     ["tip", "If the grey line says \"(TCI says …, ignored)\", Zeus's TCI connection reported a different frequency from the one Zeus shows. The panel uses the one Zeus shows."]]},
 
   { title: "Standby on Tune (the TUNE STBY button)", blocks: [
@@ -878,6 +882,48 @@ function HelpView(p) {
 }
 
 // Live per-band limits for the "No antenna?" check, inside Settings.
+// Radio source: what Zeus reports, or a FlexRadio read directly (several radios can be on the network).
+function FlexSettings(props) {
+  const { draft, set, callBackend, status, id } = props;
+  const [list, setList] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const flex = draft.radioSource === "flex";
+  const search = async () => {
+    setBusy(true);
+    try { setList(await call(callBackend, "POST", "/flex/discover")); }
+    catch (e) { setList({ ok: false, found: [], message: String((e && e.message) || e) }); }
+    setBusy(false);
+  };
+  useEffect(() => { if (flex && !list) search(); }, [flex]);
+  const found = (list && list.found) || [];
+  const label = (r) => (r.model || "FlexRadio") + (r.nickname ? " \"" + r.nickname + "\"" : "") + " · serial " + r.serial + " · " + r.ip;
+  return h("div", { key: "flexbox" },
+    Field("Radio source", id("radioSource"), h("select", { id: id("radioSource"), className: c("in"), value: draft.radioSource,
+      onChange: (e) => set("radioSource", e.target.value) },
+      h("option", { value: "zeus" }, "What Zeus reports (any radio)"),
+      h("option", { value: "flex" }, "Read a FlexRadio directly"))),
+    h("div", { className: c("muted") }, flex
+      ? "Use this for a FlexRadio (e.g. Zeus Link Flex) if the amp doesn't follow the VFO. The panel only listens to the radio; it never changes it."
+      : "Anan, Hermes Lite and most other radios work with this setting."),
+    flex ? [
+      h("div", { key: "fxpick", className: c("row") },
+        h("select", { id: id("flexSerial"), className: c("in grow"), value: draft.flexSerial, onChange: (e) => set("flexSerial", e.target.value) },
+          [h("option", { key: "", value: "" }, "Automatic (the radio Zeus is connected to)")]
+            .concat(found.map((r) => h("option", { key: r.serial, value: r.serial }, label(r) + (r.zeus ? " · Zeus is using this" : ""))))
+            .concat(draft.flexSerial && !found.some((r) => r.serial === draft.flexSerial)
+              ? [h("option", { key: "cur", value: draft.flexSerial }, "serial " + draft.flexSerial + " (not seen just now)")] : [])),
+        h("button", { type: "button", className: c("b"), disabled: busy, onClick: search }, busy ? "Searching…" : "Find radios")),
+      list && list.message ? h("div", { key: "fxmsg", className: c("err") }, list.message) : null,
+      list && list.ok && !found.length ? h("div", { key: "fxnone", className: c("muted") }, "No FlexRadio answered. Check it is on this network, or type its address below.") : null,
+      Field("Radio address (optional)", id("flexHost"), h("input", { id: id("flexHost"), className: c("in"), value: draft.flexHost,
+        placeholder: "only if it can't be found automatically", onChange: (e) => set("flexHost", e.target.value) })),
+      h("div", { key: "fxst", className: c(status && status.connected ? "muted" : "err"), role: "status" },
+        !status ? "FlexRadio status: not started yet — click Save."
+          : status.connected ? "FlexRadio status: connected to " + (status.radio ? label(status.radio) : status.target) + "."
+          : "FlexRadio status: not connected — " + (status.error || status.notice || "looking…")),
+    ] : null);
+}
+
 function NoAntBands(props) {
   const { callBackend, below, above } = props;
   const [data, setData] = useState(null);
@@ -1021,6 +1067,9 @@ function Settings(p) {
       Check(draft, setDraft, "confirmPowerOn", "Confirm power on")),
     Field("Frequency step (kHz)", id("frequencyStepKhz"), numIn("frequencyStepKhz", 1, 100)),
 
+    h("div", { className: c("glab") }, "Radio"),
+    h(FlexSettings, { key: "flexset", draft, set, callBackend: p.callBackend, status: p.flexStatus, id }),
+
     h("div", { className: c("glab") }, "Standby on Tune"),
     h("div", { className: c("checks") },
       Check(draft, setDraft, "standbyOnTune", "Enable Standby-on-Tune (same as the TUNE STBY button)"),
@@ -1052,6 +1101,8 @@ function Settings(p) {
       h("option", { value: "standby" }, "Warn and keep the amp in STANDBY"))),
     Field("Limit below noise floor (dB)", id("noAntBelowFloorDb"), numIn("noAntBelowFloorDb", 1, 30)),
     Field("Limit above no-antenna noise (dB)", id("noAntAboveEquipDb"), numIn("noAntAboveEquipDb", 1, 30)),
+    draft.radioSource === "flex" ? h("div", { key: "naflex", className: c("muted") },
+      "This check is not available when the radio source is a FlexRadio read directly (it needs a receive level).") :
     draft.tciEnabled ? null : h("div", { key: "natci", className: c("muted") },
       "This check needs the receive level from Zeus: tick \"Use Zeus TCI\" above and set Zeus's TCI port (Zeus's default is 40001)."),
     h(NoAntBands, { key: "nab", callBackend: p.callBackend, below: draft.noAntBelowFloorDb, above: draft.noAntAboveEquipDb }),
