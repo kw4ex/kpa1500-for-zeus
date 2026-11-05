@@ -21,6 +21,10 @@ on:
         description: "Mark as the Latest release (true or false)"
         required: true
         default: "true"
+      title:
+        description: "Release title (blank = Elecraft KPA1500 for Zeus <tag>)"
+        required: false
+        default: ""
       guide_file:
         description: "Optional PDF to attach from main, e.g. docs/guides/KPA1500-for-Zeus-guide.pdf"
         required: false
@@ -57,10 +61,13 @@ jobs:
           tag="${{ inputs.tag }}"
           notes="docs/release-notes/${tag}.md"
           test -f "$notes"
+          title="${{ inputs.title }}"
+          if [ -z "$title" ]; then title="Elecraft KPA1500 for Zeus ${tag}"; fi
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" dl/* --clobber
+            gh release edit "$tag" --title "$title" --notes-file "$notes"
           else
             gh release create "$tag" dl/* --target "${{ inputs.commit }}" \
-              --title "Elecraft KPA1500 for Zeus ${tag}" --notes-file "$notes" \
+              --title "$title" --notes-file "$notes" \
               --latest="${{ inputs.latest }}"
           fi
