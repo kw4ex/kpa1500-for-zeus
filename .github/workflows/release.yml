@@ -21,10 +21,10 @@ on:
         description: "Mark as the Latest release (true or false)"
         required: true
         default: "true"
-      attach_guide:
-        description: "Also attach the PDF guide from main (true or false)"
-        required: true
-        default: "false"
+      guide_file:
+        description: "Optional PDF to attach from main, e.g. docs/guides/KPA1500-for-Zeus-guide.pdf"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -45,7 +45,7 @@ jobs:
           for f in $(git ls-tree --name-only "origin/builds" "${{ inputs.build_folder }}/"); do
             git show "origin/builds:$f" > "dl/$(basename "$f")"
           done
-          if [ "${{ inputs.attach_guide }}" = "true" ]; then cp docs/guides/KPA1500-for-Zeus-guide.pdf dl/; fi
+          if [ -n "${{ inputs.guide_file }}" ]; then cp "${{ inputs.guide_file }}" dl/; fi
           ls -l dl
           test "$(ls dl | wc -l)" -ge 5
       - name: Create the release

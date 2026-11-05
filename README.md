@@ -41,9 +41,8 @@ Apple silicon, "Processor: Intel" is Intel.
 To go back to an older version, scroll down the Releases page to it and download it
 the same way. Installing a version replaces the one you have.
 
-The FlexControl Knob has not moved to the Releases page yet; get it from its
-[download folder](https://github.com/kw4ex/zeus-amp/tree/builds/flexknob/latest)
-(click the file for your computer, then the **download** button ↓).
+The **FlexControl Knob** has its own entry on the same Releases page (look for
+"FlexControl Knob for Zeus"). Download it the same way.
 
 ## Install
 
