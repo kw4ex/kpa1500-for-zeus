@@ -77,9 +77,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $files = Get-ChildItem artifacts -Recurse -Include *.zip,*.sha256 | ForEach-Object FullName
+          $files += (Resolve-Path docs/guides/KPA1500-for-Zeus-guide.pdf).Path
           $pre = @()
           if ("${{ github.ref_name }}".Contains("-")) { $pre = @("--prerelease") }
-          gh release create "${{ github.ref_name }}" $files --title "${{ github.ref_name }}" --notes "Elecraft KPA1500 feature for Zeus. Download the file ending in .zip (not Source code) and install it in Zeus with Features > Community > Install local feature." @pre 2>$null
+          $notesFile = "docs/release-notes/${{ github.ref_name }}.md"
+          if (Test-Path $notesFile) { $notes = @("--notes-file", $notesFile) }
+          else { $notes = @("--notes", "Elecraft KPA1500 feature for Zeus. Download the file ending in .zip (not Source code) and install it in Zeus with Features > Community > Install local feature.") }
+          gh release create "${{ github.ref_name }}" $files --title "Elecraft KPA1500 for Zeus ${{ github.ref_name }}" @notes @pre 2>$null
           if ($LASTEXITCODE -ne 0) { gh release upload "${{ github.ref_name }}" $files --clobber }
 
   package-unix:

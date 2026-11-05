@@ -11,12 +11,21 @@ download one file and Zeus installs it.
 
 ## Download
 
-Open the folder for the feature you want, click the file for your computer,
-then click the **download** button (↓, "Download raw file"). **Don't unzip it** —
-Zeus opens the `.zip` itself.
+**Start at the [Releases page](https://github.com/kw4ex/zeus-amp/releases).** The top
+entry marked **Latest** is the newest version. Older versions stay listed below it,
+each with its own download files.
 
-- **KPA1500:** [builds/latest](https://github.com/kw4ex/zeus-amp/tree/builds/latest)
-- **FlexControl Knob:** [builds/flexknob/latest](https://github.com/kw4ex/zeus-amp/tree/builds/flexknob/latest)
+How to download (no GitHub account needed):
+
+1. On the Releases page, click the version you want (the newest is at the top).
+2. Scroll to the **Assets** list at the bottom. If you only see a few files, click
+   **Show all … assets**.
+3. Click the file for **your computer** (table below). Your browser saves it, normally
+   in your **Downloads** folder.
+4. **Don't click "Source code (zip)" or "Source code (tar.gz)"** — those are for
+   programmers. **Don't unzip** the file you downloaded; Zeus opens the `.zip` itself.
+5. In Zeus: **Features → Community → Install local feature**, pick the `.zip`, then
+   restart Zeus. The panel's top line shows the version.
 
 | Your computer | File name ends in |
 | --- | --- |
@@ -26,8 +35,18 @@ Zeus opens the `.zip` itself.
 | Linux PC (64-bit) | `-linux-x64.zip` |
 | Raspberry Pi 4/5 (64-bit OS) | `-linux-arm64.zip` |
 
-Older versions are kept in numbered folders on the
-[builds branch](https://github.com/kw4ex/zeus-amp/tree/builds).
+Not sure which Mac you have? Apple menu → **About This Mac**: "Chip: Apple M…" is
+Apple silicon, "Processor: Intel" is Intel.
+
+To go back to an older version, scroll down the Releases page to it and download it
+the same way. Installing a version replaces the one you have.
+
+Another way (same files): the [builds branch](https://github.com/kw4ex/zeus-amp/tree/builds)
+has a numbered folder per version. Open the folder, click the file, then click the
+**download** button (↓, "Download raw file").
+
+- **KPA1500, newest:** [builds/latest](https://github.com/kw4ex/zeus-amp/tree/builds/latest)
+- **FlexControl Knob, newest:** [builds/flexknob/latest](https://github.com/kw4ex/zeus-amp/tree/builds/flexknob/latest)
 
 ## Install
 

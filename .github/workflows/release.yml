@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Publishes a GitHub Release from files already built and tested on the `builds`
+# branch (folder per version), with notes from docs/release-notes/<tag>.md.
+# Run it from the Actions tab (Publish release > Run workflow).
+name: Publish release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to create, e.g. v1.4.4"
+        required: true
+      commit:
+        description: "Commit (SHA or branch) the tag points at"
+        required: true
+        default: main
+      build_folder:
+        description: "Folder on the builds branch holding the files, e.g. 1.4.4"
+        required: true
+      latest:
+        description: "Mark as the Latest release (true or false)"
+        required: true
+        default: "true"
+      attach_guide:
+        description: "Also attach the PDF guide from main (true or false)"
+        required: true
+        default: "false"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Collect the files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dl
+          git fetch origin builds
+          for f in $(git ls-tree --name-only "origin/builds" "${{ inputs.build_folder }}/"); do
+            git show "origin/builds:$f" > "dl/$(basename "$f")"
+          done
+          if [ "${{ inputs.attach_guide }}" = "true" ]; then cp docs/guides/KPA1500-for-Zeus-guide.pdf dl/; fi
+          ls -l dl
+          test "$(ls dl | wc -l)" -ge 5
+      - name: Create the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag }}"
+          notes="docs/release-notes/${tag}.md"
+          test -f "$notes"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dl/* --clobber
+          else
+            gh release create "$tag" dl/* --target "${{ inputs.commit }}" \
+              --title "Elecraft KPA1500 for Zeus ${tag}" --notes-file "$notes" \
+              --latest="${{ inputs.latest }}"
+          fi
