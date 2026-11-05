@@ -41,12 +41,9 @@ Apple silicon, "Processor: Intel" is Intel.
 To go back to an older version, scroll down the Releases page to it and download it
 the same way. Installing a version replaces the one you have.
 
-Another way (same files): the [builds branch](https://github.com/kw4ex/zeus-amp/tree/builds)
-has a numbered folder per version. Open the folder, click the file, then click the
-**download** button (↓, "Download raw file").
-
-- **KPA1500, newest:** [builds/latest](https://github.com/kw4ex/zeus-amp/tree/builds/latest)
-- **FlexControl Knob, newest:** [builds/flexknob/latest](https://github.com/kw4ex/zeus-amp/tree/builds/flexknob/latest)
+The FlexControl Knob has not moved to the Releases page yet; get it from its
+[download folder](https://github.com/kw4ex/zeus-amp/tree/builds/flexknob/latest)
+(click the file for your computer, then the **download** button ↓).
 
 ## Install
 
