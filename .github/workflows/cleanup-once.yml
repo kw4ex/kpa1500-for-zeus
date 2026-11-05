@@ -1,0 +1,13 @@
+name: One-time cleanup (Knob moved)
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete flexknob-v1.0.1 --cleanup-tag --yes

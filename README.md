@@ -1,17 +1,16 @@
-# KW4EX — Zeus SDR features
+# Elecraft KPA1500 for Zeus
 
-Two add-ons ("community features") for **Zeus**, the SDR program for ANAN and
-other openHPSDR radios. They are written for operators, not programmers: you
+An add-on ("community feature") for **Zeus**, the SDR program for ANAN and
+other openHPSDR radios. It is written for operators, not programmers: you
 download one file and Zeus installs it.
 
 | Feature | Latest | What it does |
 | --- | --- | --- |
 | **Elecraft KPA1500** | 1.4.4 | Meters and buttons for the KPA1500 amplifier and its ATU; the amp follows the VFO (including a FlexRadio read directly); Standby on Tune; "No antenna?" warning; small view and built-in help; a browser page for this or other computers, tablets and phones; power-on over the network. |
-| **FlexControl Knob** | 1.0.1 | Use the FlexRadio FlexControl USB tuning knob with Zeus: VFO tuning, AF volume, AGC gain and more, every press programmable. |
 
 ## Download
 
-**Start at the [Releases page](https://github.com/kw4ex/zeus-amp/releases).** The top
+**Start at the [Releases page](https://github.com/kw4ex/kpa1500-for-zeus/releases).** The top
 entry marked **Latest** is the newest version. Older versions stay listed below it,
 each with its own download files.
 
@@ -41,8 +40,8 @@ Apple silicon, "Processor: Intel" is Intel.
 To go back to an older version, scroll down the Releases page to it and download it
 the same way. Installing a version replaces the one you have.
 
-The **FlexControl Knob** has its own entry on the same Releases page (look for
-"FlexControl Knob for Zeus"). Download it the same way.
+Looking for the FlexControl Knob? It has its own page:
+[flexknob-for-zeus](https://github.com/kw4ex/flexknob-for-zeus/releases/latest).
 
 ## Install
 
@@ -50,7 +49,7 @@ The **FlexControl Knob** has its own entry on the same Releases page (look for
 2. Pick the `.zip` file you downloaded and click **Open**. A newer version
    simply replaces the older one.
 3. Close and restart Zeus, then add the panel: **Add Panel › Amplifiers ›
-   KPA1500** or **Add Panel › Controls › FlexControl Knob**.
+   KPA1500**.
 
 ## Instructions
 
@@ -58,7 +57,6 @@ The **FlexControl Knob** has its own entry on the same Releases page (look for
   what you need, install on Windows, Mac, Linux and Raspberry Pi, first-time
   settings, what each button means, a safe first test and troubleshooting.
   Short reference: [src/Kpa1500/README.md](src/Kpa1500/README.md).
-- **FlexControl Knob:** [src/FlexKnob/README.md](src/FlexKnob/README.md).
 
 **Important:** only one program should control the amplifier. Close the
 KPA1500 Thetis bridge (and Thetis) while Zeus is running. Standby on Tune and
