@@ -503,6 +503,11 @@ function makePanel(callBackend) {
       title: tci.connected ? "TCI connected to Zeus at " + tci.target : "TCI not connected: " + (tci.error || "connecting to " + tci.target) },
       tci.connected ? (tci.tune ? "TCI TUNE" : "TCI") : "TCI WAIT"));
     if (on && amp.operate != null && !cfg.ctlOperate) pills.push(h("span", { key: "o", className: c("pill " + (amp.operate ? "acc" : "")) }, amp.operate ? "OPERATE" : "STANDBY"));
+    const sk = status.softKey;
+    if (sk && sk.enabled) pills.push(h("span", { key: "sk", className: c("pill " + (sk.firmwareOk === false ? "warn" : sk.keyed ? "ok" : "")),
+      title: sk.firmwareOk === false ? "Software key is on, but the amp firmware is older than 3.07: nothing is sent"
+        : sk.note || (sk.keyed ? "The amp is keyed over the network (^TX)" + (sk.tq != null ? " - amp reports key state " + sk.tq : "") : "Software key on: the amp is keyed over the network while the radio transmits") },
+      sk.firmwareOk === false ? "KEY FW?" : sk.keyed ? "KEYED" : "SOFT KEY"));
     if (tx) pills.push(h("span", { key: "t", className: c("pill tx") }, "TX"));
     if (tuning) pills.push(h("span", { key: "u", className: c("pill warn") }, "ATU TUNING"));
     if (fault) pills.push(h("span", { key: "f", className: c("pill tx") }, "FAULT " + fault.code));
@@ -667,7 +672,7 @@ function makePanel(callBackend) {
             h("button", { type: "button", className: c("b"), onClick: () => setConfirm(null) }, "Cancel"))));
     } else if (showSettings && draft) {
       overlay = h("div", { className: c("overlay"), style: { alignItems: "flex-start", overflow: "auto" } },
-        Settings({ draft, setDraft, ports, saveErr, connected, busy, found, mac: amp.mac, callBackend, tciStatus: tci, flexStatus: status.flex, webStatus: status.web, webNote, onOpenWeb: openWeb,
+        Settings({ draft, setDraft, ports, saveErr, connected, busy, found, mac: amp.mac, callBackend, tciStatus: tci, flexStatus: status.flex, softKey: status.softKey, webStatus: status.web, webNote, onOpenWeb: openWeb,
           onFind: async () => {
             setFound({ searching: true });
             try { setFound(await call(callBackend, "POST", "/discover")); }
@@ -765,6 +770,17 @@ const HELP = [
       "A green TCI tag appears on the top line. If it says TCI WAIT, the line in Settings tells you why. Usually TCI is still off in Zeus, or the port number is different."]],
     ["p", "A ⚠ on the TUNE STBY button means Zeus TCI is not connected, so the button cannot do its job yet."],
     ["tip", "FlexRadio: with \"My radio is\" set to \"A FlexRadio\", the panel also listens to the Flex itself for TUNE and transmit. For best results still turn on Use Zeus TCI and use the Flex TCI port that Zeus shows (normally 40002)."]]},
+
+  { title: "Software key: keying the amp over the network (optional)", blocks: [
+    ["p", "Amp firmware 3.07 or newer can be keyed by a network command, so the KEY IN cable is not strictly needed. This option is off by default. Switch it on in ⚙ Settings under \"Key the amplifier over the network\"."],
+    ["ul", [
+      "While the radio transmits (Zeus, or a FlexRadio read directly), the panel sends ^TX30 to the amp, renews it every 10 seconds, and sends ^RX the moment the radio stops, when you switch the option off, when you disconnect and when Zeus closes.",
+      "It reads the amp's key state (^TQ) and sends again if the amp does not report keyed. A KEYED tag on the top line shows it is working.",
+      "Safety net: ^TX30 makes the amp let go by itself after 30 seconds if this panel stops talking (a crash, a network failure). The amp's RESET button also cancels it.",
+      "The KEY IN cable keeps working. The amp is keyed if either one asks.",
+      "The amp's own power reading never keys it, and the key is held off during a TUNE and while the ATU is tuning.",
+      "If the amp reports firmware older than 3.07 the panel refuses to switch it on and says why. Check the firmware on the top line."]],
+    ["warn", "Timing: the amp needs about 5 ms of key before power arrives. This panel learns that the radio is transmitting from Zeus, then the command travels over the network. If power reaches the amp before it is keyed, its relays can switch with power on them. A KEY IN cable from the radio is keyed before power by the radio's own sequencing. So test with a dummy load and low power first, watch for KEYED on the top line before the amp shows power, and keep the cable connected until you are sure. If your radio program can delay power after PTT, use it. A TUNE that starts inside Zeus is already transmitting when this panel hears of it, so for TUNE keep the cable or use the amp in STANDBY."]]},
 
   { title: "\"No antenna?\" warning (optional)", blocks: [
     ["p", "If the receive level on a band drops below a limit, it usually means no antenna is connected, and the panel shows a warning. It can also hold the amp in STANDBY. It needs TCI (see above). With a FlexRadio selected, use the Flex TCI port that Zeus shows (normally 40002)."],
@@ -1193,6 +1209,16 @@ function Settings(p) {
           : "TCI status: not connected — " + (p.tciStatus.error || "trying " + p.tciStatus.target + "…") +
             ". In Zeus's settings turn TCI on and use the same port here (Zeus's default is 40001)."),
     ] : null,
+
+    h("div", { className: c("glab") }, "Key the amplifier over the network (software key)"),
+    h("div", { className: c("checks") },
+      Check(draft, setDraft, "softKey", "Key the amp with a network command while the radio transmits (needs amp firmware 3.07 or newer; default: off)")),
+    h("div", { className: c("muted"), role: "note" },
+      "Off = only the KEY IN cable keys the amp (the proven way). On = this panel also keys the amp with the ^TX command, and lets go with ^RX when the radio stops; the amp lets go by itself after 30 seconds if this panel stops talking. " +
+      "The cable keeps working too. Read the Help topic first: the amp needs about 5 ms of key before power arrives, so test with a dummy load and low power."),
+    p.softKey && p.softKey.enabled ? h("div", { key: "sknote", className: c(p.softKey.firmwareOk === false ? "err" : "muted"), role: "status" },
+      p.softKey.firmwareOk === false ? "The amp's firmware is older than 3.07, so nothing is sent."
+        : p.softKey.note || (p.softKey.keyed ? "Keyed over the network now" + (p.softKey.tq != null ? " (amp reports " + p.softKey.tq + ")." : ".") : "Waiting for the radio to transmit.")) : null,
 
     h("div", { className: c("glab") }, "No antenna? check"),
     h("div", { className: c("checks") },

@@ -32,6 +32,9 @@ public sealed class PluginConfig
     public bool ConfirmPowerOff { get; set; } = true;
     public bool ConfirmPowerOn { get; set; }
 
+    // ── software key (amp firmware 3.07+): key the amp over the network while the radio transmits ──
+    public bool SoftKey { get; set; }                     // off by default: the hardware KEY IN line is the proven way
+
     // ── standby on tune ──
     public bool StandbyOnTune { get; set; } = true;       // master switch
     public bool TciEnabled { get; set; }                  // tune/TX events from Zeus's TCI server

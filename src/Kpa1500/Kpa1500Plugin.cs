@@ -27,7 +27,7 @@ public sealed record OnRequest(bool On);
 public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
 {
     /// <summary>Keep identical to plugin.json "version".</summary>
-    public const string ManifestVersion = "1.4.4";
+    public const string ManifestVersion = "1.5.0";
     private const string SettingsKey = "config";
 
     private IPluginContext? _ctx;
@@ -286,6 +286,7 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
                 pendingBand = amp.PendingBand >= 0 ? KpaProtocol.BandName(amp.PendingBand) : null,
                 noAnt = NoAntJson(amp),
                 otherController = amp.OtherController,
+                softKey = amp.SoftKeyState is var sk ? new { enabled = sk.Enabled, keyed = sk.Sent, tq = sk.Tq < 0 ? (int?)null : sk.Tq, firmwareOk = sk.FirmwareOk, note = sk.Note } : null,
                 standbyOnTune = amp.Config.StandbyOnTune,
                 tuneGuard = new
                 {
@@ -310,6 +311,9 @@ public sealed class Kpa1500Plugin : IZeusPlugin, IBackendPlugin
                 return Results.Json(new { ok = false, message = "The browser-page password must be 8 to 100 characters." }, statusCode: 400);
             if (body.WebLan && body.WebRequirePassword && newPw == "" && _webAuth is null)
                 return Results.Json(new { ok = false, message = "Choose a browser-page password before allowing other devices." }, statusCode: 400);
+            // Software key: only switched ON for an amp that is known to have firmware 3.07 or newer.
+            if (body.SoftKey && !amp.Config.SoftKey && KpaProtocol.SoftKeyRefusal(amp.State.Firmware) is { Length: > 0 } skWhy)
+                return Results.Json(new { ok = false, message = skWhy }, statusCode: 400);
             // Keep a MAC the feature learned if the panel's copy predates it.
             if (string.IsNullOrWhiteSpace(body.AmpMac)) body.AmpMac = amp.Config.AmpMac;
             var cfg = PluginConfig.Sanitize(body);

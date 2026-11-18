@@ -130,6 +130,19 @@ public sealed class AmpController : IAsyncDisposable
     private bool _settlePending;
     private bool _prevTuneSignal;
     private readonly TuneGuard _tune = new();
+
+    // Software key (^TX/^RX/^TQ, amp firmware 3.07+). Touched only by the key loop (and Dispose, after it ends).
+    private readonly SemaphoreSlim _keyWake = new(0, 1);
+    private Task? _keyLoop;
+    private bool _keySent;                 // a ^TX is active in the amp
+    private DateTime _keyLast = DateTime.MinValue;   // when ^TX was last sent
+    private DateTime _keyTqAt = DateTime.MinValue;   // when ^TQ was last read
+    private volatile int _keyTq = -1;      // last ^TQ answer (0 none, 1 software, 2 KEY IN, 3 both), -1 unknown
+    private volatile string _keyNote = "";
+    /// <summary>^TX is sent with this many seconds to live; the amp lets go by itself if this feature goes silent.</summary>
+    public const int KeyTimeoutS = 30;
+    /// <summary>How often a running ^TX is renewed (tests shorten it).</summary>
+    internal TimeSpan KeyRefresh { get; set; } = TimeSpan.FromSeconds(10);
     private int _powerOnBusy;
 
     // "No antenna?" check.
@@ -168,6 +181,7 @@ public sealed class AmpController : IAsyncDisposable
         RestartFlex(cfg);
         _cts = new CancellationTokenSource();
         _loop = Task.Run(() => LoopAsync(_cts.Token));
+        _keyLoop = Task.Run(() => KeyLoopAsync(_cts.Token));
     }
 
     public PluginConfig Config { get { lock (_gate) return _cfg.Clone(); } }
@@ -258,6 +272,11 @@ public sealed class AmpController : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _cts?.Cancel();
+        if (_keyLoop is not null)
+        {
+            // The key loop sends ^RX on its way out, so it must finish before the link is closed.
+            try { await _keyLoop.WaitAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false); } catch { }
+        }
         if (_loop is not null)
         {
             try { await _loop.WaitAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false); } catch { }
@@ -320,6 +339,7 @@ public sealed class AmpController : IAsyncDisposable
     private void OnMox(bool tx)
     {
         _radioMox = tx;
+        WakeKey();      // key the amp the moment Zeus says it is transmitting, not on the next poll
         // Zeus reports TUNE and MOX alike here; ask TCI which one it is.
         _tci?.QueryTxState();
         if (tx && _cfg.StandbyOnTune && _flex is null && !(_tci?.Connected ?? false) && DateTime.UtcNow - _noTciWarnAt > TimeSpan.FromMinutes(5))
@@ -337,6 +357,137 @@ public sealed class AmpController : IAsyncDisposable
         try { if (_wake.CurrentCount == 0) _wake.Release(); }
         catch (SemaphoreFullException) { }
         catch (ObjectDisposedException) { }
+        WakeKey();      // TCI / FlexRadio changes also reach the key loop at once
+    }
+
+    private void WakeKey()
+    {
+        try { if (_keyWake.CurrentCount == 0) _keyWake.Release(); }
+        catch (SemaphoreFullException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+
+    // ── software key: ^TX / ^RX / ^TQ (amp firmware 3.07+) ─────────────────
+    // Off by default. While the RADIO says it transmits (Zeus MOX, Zeus TCI, FlexRadio), key the amp over the
+    // network: ^TX30 (the amp lets go by itself after 30 s), renewed every 10 s, ^RX when the radio stops. The
+    // amp's own forward-power reading never keys it. It is held off during a tune and while Standby-on-Tune is
+    // working, as in the KPA1500 SDR Bridge. The KEY IN cable keeps working too: either one keys the amp.
+
+    /// <summary>Radio-reported transmit (no amp readings), for keying.</summary>
+    private bool RadioTx() => _radioMox || ((_tci?.Trx ?? false) && (_radio is null || _radioMox)) || TciTune || (_flex?.Tx ?? false);
+
+    /// <summary>What the software key is doing, for the panel.</summary>
+    public (bool Enabled, bool Sent, int Tq, bool? FirmwareOk, string Note) SoftKeyState
+    {
+        get
+        {
+            bool en; string? fw;
+            lock (_gate) { en = _cfg.SoftKey; fw = _state.Firmware; }
+            return (en, _keySent, _keyTq, KpaProtocol.HasSoftKey(fw), _keyNote);
+        }
+    }
+
+    private async Task KeyLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try { await _keyWake.WaitAsync(100, ct).ConfigureAwait(false); }
+                catch (OperationCanceledException) { break; }
+                try { await KeyStepAsync(ct).ConfigureAwait(false); }
+                catch (OperationCanceledException) { break; }
+                catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
+                {
+                    // Link gone: the amp lets go by itself within KeyTimeoutS seconds.
+                    if (_keySent) Note("warn", "Software key: the connection to the amp closed while keyed - the amp will let go by itself within " + KeyTimeoutS + " s.");
+                    _keySent = false; _keyTq = -1;
+                }
+                catch (Exception ex) { _log.LogDebug(ex, "KPA1500 key step failed"); }
+            }
+        }
+        finally
+        {
+            // Closing down: let the amp go, then done.
+            try { if (_keySent && _link is { IsAlive: true } l) await KeyReleaseAsync(l, "feature stopping", CancellationToken.None).ConfigureAwait(false); }
+            catch { /* the amp's own timeout covers it */ }
+        }
+    }
+
+    private async Task KeyStepAsync(CancellationToken ct)
+    {
+        PluginConfig cfg; bool? fwOk; bool? operate; bool power, tuningAtu; bool holdTune;
+        lock (_gate)
+        {
+            cfg = _cfg;
+            fwOk = KpaProtocol.HasSoftKey(_state.Firmware);
+            operate = _state.Operate;
+            power = _state.Power == "on";
+            tuningAtu = _state.Tuning == true;
+            holdTune = _tune.Phase != TunePhase.Idle;
+        }
+        var link = _link;
+        var linkOk = link is { IsAlive: true };
+        var hold = holdTune || tuningAtu || TuneSignal(cfg);
+        var want = cfg.SoftKey && linkOk && power && fwOk == true && operate != false && !hold && RadioTx();
+
+        string note;
+        if (!cfg.SoftKey) note = "";
+        else if (fwOk == false) note = "Software key is on, but the amp firmware is older than 3.07 - nothing is sent. The KEY IN line is the only key.";
+        else if (fwOk is null) note = "Software key is on; waiting to read the amp's firmware.";
+        else if (hold && RadioTx()) note = "Software key held off during TUNE / ATU tuning.";
+        else note = "";
+        _keyNote = note;
+
+        if (!linkOk) { if (_keySent) { _keySent = false; _keyTq = -1; } return; }
+
+        var now = DateTime.UtcNow;
+        if (want)
+        {
+            if (!_keySent || now - _keyLast >= KeyRefresh)
+            {
+                await link!.SendAsync(KpaProtocol.KeyOn(KeyTimeoutS), ct).ConfigureAwait(false);
+                if (!_keySent) Note("cmd", "Software key: ^TX sent (amp keyed over the network).");
+                _keySent = true;
+                _keyLast = now;
+                _keyTqAt = now;       // first read-back after a short settle
+            }
+            else if (now - _keyTqAt >= TimeSpan.FromMilliseconds(500))
+            {
+                _keyTqAt = now;
+                var tq = KpaProtocol.ParseTq(await link!.QueryAsync("TQ", TimeSpan.FromMilliseconds(600), ct).ConfigureAwait(false));
+                _keyTq = tq ?? -1;
+                // A lost network packet: the amp says it is not keyed although it should be.
+                if (tq is 0 or 2 && now - _keyLast > TimeSpan.FromMilliseconds(600))
+                {
+                    Note("warn", "Software key: the amp does not report keyed (^TQ" + tq + ") - sending ^TX again.");
+                    await link.SendAsync(KpaProtocol.KeyOn(KeyTimeoutS), ct).ConfigureAwait(false);
+                    _keyLast = now;
+                }
+            }
+        }
+        else if (_keySent)
+        {
+            await KeyReleaseAsync(link!, cfg.SoftKey ? (RadioTx() ? "held off for TUNE / ATU tuning or amp not in OPERATE" : "radio stopped transmitting") : "switched off", ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>^RX, then read ^TQ and send again (a few times) if the amp still reports the software key.</summary>
+    private async Task KeyReleaseAsync(KpaLink link, string why, CancellationToken ct)
+    {
+        for (var i = 0; i < 3; i++)
+        {
+            await link.SendAsync(KpaProtocol.KeyOff, ct).ConfigureAwait(false);
+            await Task.Delay(60, ct).ConfigureAwait(false);
+            var tq = KpaProtocol.ParseTq(await link.QueryAsync("TQ", TimeSpan.FromMilliseconds(600), ct).ConfigureAwait(false));
+            _keyTq = tq ?? -1;
+            if (tq is null or 0 or 2) break;
+        }
+        _keySent = false;
+        Note("cmd", "Software key: ^RX sent (" + why + ").");
+        if (_keyTq == 2) Note("info", "The amp's KEY IN line is still pulled down (^TQ2) - the cable, not the software key, is keying the amp.");
+        if (_keyTq is 1 or 3) Note("warn", "Software key: the amp still reports the software key (^TQ" + _keyTq + ") after ^RX. It will let go by itself within " + KeyTimeoutS + " s; pressing RESET on the amp also cancels it.");
     }
 
     // ── status ──────────────────────────────────────────────────────────────
@@ -477,6 +628,12 @@ public sealed class AmpController : IAsyncDisposable
         _nextOpenAttempt = DateTime.UtcNow + RetryInterval;
         if (link is null) return;
         if (reason is not null) Note("warn", $"Link closed: {reason}.");
+        if (_keySent && link.IsAlive)
+        {
+            // Let the software key go before the link closes (a deliberate disconnect or new settings).
+            try { await link.SendAsync(KpaProtocol.KeyOff, CancellationToken.None).ConfigureAwait(false); Note("cmd", "Software key: ^RX sent (connection closing)."); } catch { }
+            _keySent = false;
+        }
         await link.DisposeAsync().ConfigureAwait(false);
     }
 

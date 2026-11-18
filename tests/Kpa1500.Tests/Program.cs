@@ -486,5 +486,132 @@ Console.WriteLine("Browser page on the network, password turned off");
     }
 }
 
+
+Console.WriteLine("Software key: ^TX / ^RX / ^TQ (amp firmware 3.07+)");
+Check("firmware 03.07 and newer have the key commands, 03.06 does not",
+    KpaProtocol.HasSoftKey("03.07") == true && KpaProtocol.HasSoftKey("03.14") == true && KpaProtocol.HasSoftKey("4.00") == true &&
+    KpaProtocol.HasSoftKey("03.06") == false && KpaProtocol.HasSoftKey("02.99") == false && KpaProtocol.HasSoftKey("") == null && KpaProtocol.HasSoftKey(null) == null);
+Check("refusal text says why, and is empty when allowed",
+    KpaProtocol.SoftKeyRefusal("03.07") == "" && KpaProtocol.SoftKeyRefusal("03.02").Contains("older than 3.07") && KpaProtocol.SoftKeyRefusal(null).Contains("not known"));
+Check("^TX is formatted with a two-digit time out, ^RX fixed, ^TQ read",
+    KpaProtocol.KeyOn(30) == "^TX30;" && KpaProtocol.KeyOn(5) == "^TX05;" && KpaProtocol.KeyOff == "^RX;" &&
+    KpaProtocol.ParseTq("2") == 2 && KpaProtocol.ParseTq("") is null && KpaProtocol.ParseTq("9") is null);
+Check("the software key is off by default", new PluginConfig().SoftKey == false && PluginConfig.Sanitize(new PluginConfig()).SoftKey == false);
+
+// helper: an amp + a pretend Zeus radio, with the key switched on or off
+async Task<(AmpController ctl, FakeRadio radio)> KeyRig(FakeAmp amp, bool softKey, FakeTci? tci = null)
+{
+    var radio = new FakeRadio();
+    var ctl = new AmpController(NullLogger.Instance, new EventLog(500));
+    ctl.AttachRadio(radio);
+    ctl.KeyRefresh = TimeSpan.FromSeconds(1);
+    ctl.Start(PluginConfig.Sanitize(new PluginConfig
+    {
+        Host = "127.0.0.1", NetPort = amp.Port, PollMs = 50, SoftKey = softKey,
+        StandbyOnTune = false, AutoTuneDetect = false,
+        TciEnabled = tci is not null, TciHost = "localhost", TciPort = tci?.Port ?? 40001,
+    }));
+    await WaitFor(() => ctl.State.Firmware == amp.Firmware, 6);
+    return (ctl, radio);
+}
+
+using (var amp = new FakeAmp { Firmware = "03.07" })
+{
+    var (ctl, radio) = await KeyRig(amp, true);
+    await using var _ = ctl;
+    Check("firmware is read from the amp", ctl.State.Firmware == "03.07");
+    Check("nothing is keyed while the radio is receiving", amp.TxCount == 0 && !amp.Soft);
+    radio.SetMox(true);
+    Check("the radio transmits -> the amp is keyed (^TX)", await WaitFor(() => amp.Soft, 2) && amp.Received.Contains("^TX30;"));
+    Check("the panel shows keyed and the amp confirms (^TQ1)", await WaitFor(() => ctl.SoftKeyState.Sent && ctl.SoftKeyState.Tq == 1, 3));
+    var tx0 = amp.TxCount;
+    Check("^TX is renewed while transmitting", await WaitFor(() => amp.TxCount > tx0, 4));
+    radio.SetMox(false);
+    Check("the radio stops -> the amp is let go (^RX)", await WaitFor(() => !amp.Soft && !ctl.SoftKeyState.Sent, 2) && amp.RxCount >= 1);
+}
+
+using (var amp = new FakeAmp { Firmware = "03.07" })
+{
+    var (ctl, radio) = await KeyRig(amp, true);
+    await using var _ = ctl;
+    amp.DropNextTx = 1;
+    radio.SetMox(true);
+    Check("a lost ^TX packet is noticed (^TQ0) and sent again", await WaitFor(() => amp.Soft, 5) && amp.TxCount >= 2);
+    amp.DropNextRx = 1;
+    radio.SetMox(false);
+    Check("a lost ^RX packet is noticed and sent again", await WaitFor(() => !amp.Soft, 4) && amp.RxCount >= 2);
+}
+
+using (var amp = new FakeAmp { Firmware = "03.07" })
+{
+    var (ctl, radio) = await KeyRig(amp, true);
+    amp.HwKey = true;
+    radio.SetMox(true);
+    await WaitFor(() => amp.Soft, 2);
+    radio.SetMox(false);
+    Check("the cable keeping the amp keyed is reported, not hidden (^TQ2)", await WaitFor(() => !amp.Soft && ctl.SoftKeyState.Tq == 2, 3));
+    await ctl.DisposeAsync();
+}
+
+using (var amp = new FakeAmp { Firmware = "03.07" })
+{
+    var (ctl, radio) = await KeyRig(amp, false);
+    await using var _ = ctl;
+    radio.SetMox(true);
+    await Task.Delay(700);
+    radio.SetMox(false);
+    Check("software key off: no ^TX or ^RX is ever sent", amp.TxCount == 0 && amp.RxCount == 0 && !amp.Received.Any(x => x.StartsWith("^TX") || x == "^RX;" || x == "^TQ;"));
+}
+
+using (var amp = new FakeAmp { Firmware = "03.06" })
+{
+    var (ctl, radio) = await KeyRig(amp, true);
+    await using var _ = ctl;
+    radio.SetMox(true);
+    await Task.Delay(700);
+    Check("firmware 03.06 with the option on: nothing is sent, the panel says so", amp.TxCount == 0 && ctl.SoftKeyState.FirmwareOk == false && ctl.SoftKeyState.Note.Contains("older than 3.07"));
+}
+
+using (var amp = new FakeAmp { Firmware = "03.07" })
+{
+    var (ctl, radio) = await KeyRig(amp, true);
+    await using var _ = ctl;
+    amp.Fwd = 600;           // the amp's own power reading alone must never key it
+    await Task.Delay(900);
+    Check("the amp's own forward-power reading does not key it", amp.TxCount == 0 && !amp.Soft);
+    amp.Fwd = 0;
+}
+
+using (var amp = new FakeAmp { Firmware = "03.07" })
+using (var zt = new FakeTci())
+{
+    zt.TunOn = true;
+    var (ctl, radio) = await KeyRig(amp, true, zt);
+    await using var _ = ctl;
+    await WaitFor(() => ctl.Tci.Connected, 6);
+    radio.SetMox(true);
+    await Task.Delay(1500);
+    Check("during a TUNE the software key is held off", !amp.Soft && !ctl.SoftKeyState.Sent);
+}
+
+using (var amp = new FakeAmp { Firmware = "03.07" })
+{
+    var (ctl, radio) = await KeyRig(amp, true);
+    radio.SetMox(true);
+    await WaitFor(() => amp.Soft, 2);
+    await ctl.DisposeAsync();
+    Check("closing the feature while keyed lets the amp go (^RX)", !amp.Soft && amp.RxCount >= 1);
+}
+
+using (var amp = new FakeAmp { Firmware = "03.07" })
+{
+    var (ctl, radio) = await KeyRig(amp, true);
+    await using var _ = ctl;
+    radio.SetMox(true);
+    await WaitFor(() => amp.Soft, 2);
+    ctl.ApplyConfig(PluginConfig.Sanitize(new PluginConfig { Host = "127.0.0.1", NetPort = amp.Port, PollMs = 50, SoftKey = false, StandbyOnTune = false, AutoTuneDetect = false }));
+    Check("switching the option off while keyed lets the amp go", await WaitFor(() => !amp.Soft, 3));
+}
+
 Console.WriteLine($"\n{passed} passed, {failures} failed");
 return failures == 0 ? 0 : 1;

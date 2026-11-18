@@ -52,6 +52,38 @@ public static class KpaProtocol
     /// <summary>ATU in-line / bypass for the current band and antenna (^AMI; / ^AMB;), as the proven bridge used.</summary>
     public static string SetAtuMode(bool inline) => inline ? "^AMI;" : "^AMB;";
     public const string AntennaNext = "^AN0;";
+
+    // ── software key (firmware 03.07 or newer; Programming Reference, rev. for 03.0) ──
+    //   ^TXnn;  key the amp as if KEY IN were pulled down, nn = 1..99 s then it lets go by itself
+    //   ^RX;    cancel that key       ^TQ;  GET -> ^TQn;  0 none, 1 software, 2 KEY IN line, 3 both
+    /// <summary>Oldest firmware that has ^TX / ^RX / ^TQ.</summary>
+    public const int SoftKeyMajor = 3, SoftKeyMinor = 7;
+    public const string KeyOff = "^RX;";
+    public static string KeyOn(int timeoutSeconds)
+    {
+        if (timeoutSeconds is < 1 or > 99) throw new ArgumentOutOfRangeException(nameof(timeoutSeconds));
+        return "^TX" + timeoutSeconds.ToString("00", CultureInfo.InvariantCulture) + ";";
+    }
+    /// <summary>Key state from the ^TQ payload: 0..3, or null when it can't be read.</summary>
+    public static int? ParseTq(string? payload) =>
+        payload is { Length: > 0 } && payload.Trim() is { } t && t.Length == 1 && t[0] is >= '0' and <= '3' ? t[0] - '0' : null;
+    /// <summary>"03.07" -> (3, 7); null when the text is not a firmware number.</summary>
+    public static (int Major, int Minor)? ParseFirmware(string? rv)
+    {
+        if (rv is null) return null;
+        var m = System.Text.RegularExpressions.Regex.Match(rv, @"^\s*0*(\d+)\.(\d+)");
+        return m.Success ? (int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture), int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture)) : null;
+    }
+    /// <summary>True / false when the firmware is known; null when it is not.</summary>
+    public static bool? HasSoftKey(string? rv) =>
+        ParseFirmware(rv) is { } f ? (f.Major, f.Minor).CompareTo((SoftKeyMajor, SoftKeyMinor)) >= 0 : null;
+    /// <summary>Why the software key can't be switched on now, or "" when it can.</summary>
+    public static string SoftKeyRefusal(string? rv) => HasSoftKey(rv) switch
+    {
+        true => "",
+        false => $"Software key refused: the amplifier firmware ({rv?.Trim()}) is older than 3.07, which is the first version with the network key command. Update the amp firmware, or keep the hardware KEY IN line.",
+        null => "Software key: the amplifier's firmware is not known yet. Connect to the amplifier, wait until it shows its firmware, then try again.",
+    };
     public const string EnableWakeOnLan = "^WL1;";
     public static string SetFanMinimum(int speed)
     {

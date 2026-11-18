@@ -32,6 +32,12 @@ public sealed class FakeAmp : IDisposable
     public volatile int Ant = 1;
     public volatile char Atu = 'I';
     public volatile bool Tuning;
+    public volatile string Firmware = "03.02";
+    public volatile bool Soft;           // keyed by ^TX
+    public volatile bool HwKey;          // KEY IN line pulled down
+    public volatile int DropNextTx;      // pretend the next N ^TX packets were lost
+    public volatile int DropNextRx;      // pretend the next N ^RX packets were lost
+    public int TxCount, RxCount;
 
     public FakeAmp() => _loop = Task.Run(RunAsync);
 
@@ -54,7 +60,7 @@ public sealed class FakeAmp : IDisposable
             {
                 "^I;" => "^KPA1500;",
                 "^SN;" => "^SN00022;",
-                "^RV;" => "^RV03.02;",
+                "^RV;" => $"^RV{Firmware};",
                 "^ON;" => "^ON1;",
                 "^MA;" => "^MA54:10:EC:14:75:22;",
                 "^WL;" => $"^WL{Wl};",
@@ -70,6 +76,8 @@ public sealed class FakeAmp : IDisposable
                 "^AN;" => $"^AN{Ant};",
                 "^BN;" => $"^BN{Band:00};",
                 "^TP;" => Tuning ? "^TP1;" : "^TP0;",
+                "^TQ;" => Version.Parse(Firmware.TrimStart('0') is { Length: > 0 } f0 ? f0 : "0.0") >= new Version(3, 7)
+                    ? $"^TQ{(Soft ? 1 : 0) + (HwKey ? 2 : 0)};" : null,
                 "^FS;" => $"^FS{Math.Max(FanMin, 1)};",
                 "^FC;" => $"^FC{FanMin};",
                 "^SB;" => "^SB016;",
@@ -84,6 +92,16 @@ public sealed class FakeAmp : IDisposable
     private void Apply(string c)
     {
         if (c is "^OS0;" or "^OS1;") Mode = c[3] - '0';
+        else if (Regex.IsMatch(c, @"^\^TX(\d\d)?;$") && Version.Parse(Firmware.TrimStart('0') is { Length: > 0 } f1 ? f1 : "0.0") >= new Version(3, 7))
+        {
+            Interlocked.Increment(ref TxCount);
+            if (DropNextTx > 0) DropNextTx--; else Soft = true;
+        }
+        else if (c == "^RX;" && Version.Parse(Firmware.TrimStart('0') is { Length: > 0 } f2 ? f2 : "0.0") >= new Version(3, 7))
+        {
+            Interlocked.Increment(ref RxCount);
+            if (DropNextRx > 0) DropNextRx--; else Soft = false;
+        }
         else if (c == "^ON0;") Asleep = true;
         else if (c == "^FLC;") Fault = 0;
         else if (c == "^WL1;") Wl = 1;
